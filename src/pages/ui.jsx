@@ -1,0 +1,1 @@
+export const FONT_BODY = "'Public Sans', -apple-system, BlinkMacSystemFont, 'Public Sans', Roboto, sans-serif";

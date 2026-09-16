@@ -1,0 +1,8 @@
+{
+  "appId": "com.bbm.marketplace",
+  "appName": "BBM",
+  "webDir": "dist",
+  "server": {
+    "url": "https://www.bbm.business"
+  }
+}

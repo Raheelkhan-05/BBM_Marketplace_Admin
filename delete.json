@@ -1,0 +1,26 @@
+{
+    "success": true,
+    "cached": true,
+    "credits_remaining": 9,
+    "data": {
+        "gstin": "24AAHCB3512C1ZD",
+        "legal_name": "BRAND BRIGADE MARKETING PRIVATE LIMITED",
+        "trade_name": "BRAND BRIGADE MARKETING PRIVATE LIMITED",
+        "status": "Active",
+        "constitution": "Private Limited Company",
+        "taxpayer_type": "Regular",
+        "registration_date": "30/11/2017",
+        "last_updated": "09/08/2022",
+        "state": "Gujarat",
+        "state_code": "24",
+        "pan": "AAHCB3512C",
+        "address": "SHIVSHAKTI AUTO MANINAGAR, GREENLAND, KUVADVA ROAD, RAJKOT, Rajkot, Gujarat — 360003",
+        "district": "Rajkot",
+        "pincode": "360003",
+        "nature_of_business": [
+            "Others",
+            "Retail Business",
+            "Export"
+        ]
+    }
+}
