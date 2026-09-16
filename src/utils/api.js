@@ -523,6 +523,29 @@ export async function adminUpdateCatalogEntry(token, level, id, payload) {
   return res.json();
 }
 
+export async function adminSearchCatalogEverywhere(token, q) {
+  const params = new URLSearchParams({ q });
+  const res = await fetch(`${API_BASE}/admin/catalog/search?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return res.json();
+}
+
+export async function adminListUnmappedCatalog(token, level, q = "") {
+  const params = new URLSearchParams({ level, ...(q ? { q } : {}) });
+  const res = await fetch(`${API_BASE}/admin/catalog/unmapped?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return res.json();
+}
+
+export async function adminGetUnmappedCounts(token) {
+  const res = await fetch(`${API_BASE}/admin/catalog/unmapped/counts`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return res.json();
+}
+
 // utils/api.js — additions
 export async function uploadCatalogFile(file) {
   const formData = new FormData();

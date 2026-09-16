@@ -1,12 +1,12 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { Loader2, ArrowLeft, Check, X, Save, ImageIcon, ChevronDown } from "lucide-react";
+import { Loader2, ArrowLeft, Check, X, Save, ImageIcon, Trash2, ChevronDown } from "lucide-react";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { AnimatePresence } from "framer-motion";
 import {
     adminGetCatalogEntry, adminUpdateCatalogEntry, adminApproveCatalogEntry,
     adminRejectCatalogEntry, adminGetCatalogOptions, adminCreateCatalogOption,
-    adminListBrandItemSubmissions,
+    adminListBrandItemSubmissions, adminDeleteCatalogEntry
 } from "../../utils/api.js";
 import CascadingHierarchyPicker from "../../components/CascadingHierarchyPicker.jsx";
 import ImageLightbox from "../../components/ImageLightbox";
@@ -61,6 +61,7 @@ export default function AdminCatalogDetailPage() {
     const [editableFields, setEditableFields] = useState([]);
     const [form, setForm] = useState({});
     const [chain, setChain] = useState({ category: null, subcategory: null, product: null });
+    const [deleting, setDeleting] = useState(false);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [rejectReason, setRejectReason] = useState("");
@@ -169,6 +170,20 @@ export default function AdminCatalogDetailPage() {
         } finally {
             setSaving(false);
         }
+    }
+
+    async function handleDelete() {
+        const confirmed = window.confirm(
+            level === "brand_item"
+                ? `Delete "${entry.name}"? This removes it from the catalog and hides it from buyers immediately.`
+                : `Delete "${entry.name}"? This will also remove everything nested under it (subcategories, generic products, brand items) from view.`
+        );
+        if (!confirmed) return;
+        setDeleting(true);
+        const res = await adminDeleteCatalogEntry(token, level, id);
+        setDeleting(false);
+        if (!res?.success) return setError(res?.message || "Couldn't delete that.");
+        navigate("/catalog");
     }
 
     async function handleReject() {
@@ -339,15 +354,19 @@ export default function AdminCatalogDetailPage() {
             {/* Sticky action bar */}
             <div className="fixed inset-x-0 bottom-0 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur-md">
                 <div className="mx-auto flex max-w-3xl items-center gap-2">
-                    <button onClick={handleSave} disabled={saving}
+                    <button onClick={handleSave} disabled={saving || deleting}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-2.5 text-[13px] font-bold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50">
                         <Save className="h-3.5 w-3.5" /> Save
                     </button>
-                    <button onClick={() => setShowReject(true)} disabled={saving}
+                    <button onClick={() => setShowReject(true)} disabled={saving || deleting}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-[#c71f11]/25 px-4 py-2.5 text-[13px] font-bold text-[#c71f11] transition-colors hover:bg-[#c71f11]/5 disabled:opacity-50">
                         <X className="h-3.5 w-3.5" /> Reject
                     </button>
-                    <button onClick={handleApprove} disabled={saving}
+                    <button onClick={handleDelete} disabled={saving || deleting}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2.5 text-[13px] font-bold text-slate-500 transition-colors hover:border-[#c71f11]/25 hover:bg-[#c71f11]/5 hover:text-[#c71f11] disabled:opacity-50">
+                        {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                    </button>
+                    <button onClick={handleApprove} disabled={saving || deleting}
                         className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-[#047084] px-4 py-2.5 text-[13px] font-bold text-white shadow-sm shadow-[#047084]/20 transition-transform hover:scale-[1.01] disabled:opacity-50">
                         {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
                         Approve{entry.review_status === "approved" ? " (save corrections)" : ""}
