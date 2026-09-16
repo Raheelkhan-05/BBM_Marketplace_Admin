@@ -1139,7 +1139,7 @@ export default function HomeProductFeed({ category, q = "" }) {
         setOpenItemId(item.id);
         setSellerState((prev) => ({ ...prev, [item.id]: { loading: true, items: [], error: null } }));
 
-        fetchBrandItemSellers(item.id, { sort: "price_asc", limit: SELLER_PAGE_SIZE, offset: 0, signal: controller.signal })
+        fetchBrandItemSellers(item.id, { sort: "price_asc", limit: SELLER_PAGE_SIZE, offset: 0, signal: controller.signal, token })
             .then((res) => {
                 if (!res?.success) {
                     setSellerState((prev) => ({ ...prev, [item.id]: { loading: false, items: [], error: "Couldn't load sellers." } }));
@@ -1160,7 +1160,7 @@ export default function HomeProductFeed({ category, q = "" }) {
                 if (err?.name === "AbortError") return;
                 setSellerState((prev) => ({ ...prev, [item.id]: { loading: false, items: [], error: "Couldn't load sellers." } }));
             });
-    }, [openItemId, closeDropdown]);
+    }, [openItemId, closeDropdown, token]);
 
     // Single runQuery — the primary feed fetch, with tiered fallback
     // (subcategory, then category) when a live search comes up empty.
@@ -1176,8 +1176,8 @@ export default function HomeProductFeed({ category, q = "" }) {
         // (product -> subcategory -> category matches, in that order) —
         // global across categories, not filtered by the active category tab.
         const request = trimmed
-            ? fetchProductSearchMerged(trimmed, { limit: PAGE_SIZE, offset, categoryId: category?.id || null, signal: controller.signal })
-            : fetchBrandItemsFeed({ categoryId: category?.id || null, q: "", limit: PAGE_SIZE, offset, signal: controller.signal });
+            ? fetchProductSearchMerged(trimmed, { limit: PAGE_SIZE, offset, categoryId: category?.id || null, signal: controller.signal, token })
+            : fetchBrandItemsFeed({ categoryId: category?.id || null, q: "", limit: PAGE_SIZE, offset, signal: controller.signal, token });
 
         request
             .then((res) => {
@@ -1204,7 +1204,7 @@ export default function HomeProductFeed({ category, q = "" }) {
                 setLoading(false);
                 setLoadingMore(false);
             });
-    }, [category?.id, q]);
+    }, [category?.id, q, token]);
 
     useEffect(() => {
         const key = `${category?.id || ""}::${q} `;
@@ -1241,7 +1241,7 @@ export default function HomeProductFeed({ category, q = "" }) {
         );
         return () => clearTimeout(debounceRef.current);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [category?.id, q]);
+    }, [category?.id, q, token]);
 
     useEffect(() => () => sellerAbortRef.current?.abort(), []);
 

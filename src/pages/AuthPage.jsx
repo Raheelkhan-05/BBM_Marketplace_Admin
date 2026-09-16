@@ -56,7 +56,7 @@ export default function AuthPage() {
   const location = useLocation();
   const [isNewUser, setIsNewUser] = useState(null);
 
-  const redirectTo = location.state?.from || "/home";
+  const redirectTo = location.state?.from || "/catalog";
 
   const handleBack = () => {
     if (step === "identifier") {
