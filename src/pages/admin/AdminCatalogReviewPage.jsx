@@ -1,11 +1,12 @@
 import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, ChevronRight, Tag, Sparkles, Plus, Folder, Pencil, Trash2, FileSpreadsheet, Layers, X, AlertTriangle } from "lucide-react";
+import { Search, ChevronRight, Tag, Sparkles, Plus, Folder, Pencil, Trash2, FileSpreadsheet, Layers, X, AlertTriangle, ImagePlus, Loader2, Check, BadgeCheck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
 import {
     adminListCatalog, adminDeleteCatalogEntry, adminSearchCatalogEverywhere,
     adminListUnmappedCatalog, adminGetUnmappedCounts,
+    adminListBrands, adminUpdateBrand, uploadSellerFile,
 } from "../../utils/api.js";
 import CreateSimpleCatalogModal from "../../components/CreateSimpleCatalogModal.jsx";
 import ExcelUploadModal from "../../components/ExcelUploadModal.jsx";
@@ -19,8 +20,6 @@ const BULK_SUPPORTED = new Set(["category", "subcategory", "generic_product", "b
 const LEVEL_BADGE = { category: "Category", subcategory: "Subcategory", generic_product: "Generic Product", brand_item: "Brand Item" };
 const STATUS_DOT = { approved: "#22c55e", pending_review: "#f59e0b", rejected: "#ef4444" };
 
-// NEW — the three levels that CAN be unmapped (category has no parent
-// to be missing, so it's excluded).
 const UNMAPPED_LEVELS = ["subcategory", "generic_product", "brand_item"];
 const UNMAPPED_TAB_LABEL = { subcategory: "Subcategories", generic_product: "Generic Products", brand_item: "Brand Items" };
 
@@ -31,6 +30,90 @@ function SkeletonRow() {
             <div className="min-w-0 flex-1 space-y-2">
                 <div className="h-3 w-1/3 rounded bg-slate-100" />
                 <div className="h-2.5 w-1/4 rounded bg-slate-100" />
+            </div>
+        </div>
+    );
+}
+
+// NEW — inline edit row for a single brand's name/logo. Shown in place
+// of the normal row when that brand is the one being edited.
+function EditBrandRow({ brand, token, onDone, onCancel }) {
+    const [name, setName] = useState(brand.brand_name);
+    const [image, setImage] = useState(brand.brand_image);
+    const [uploading, setUploading] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState("");
+    const fileRef = useRef(null);
+
+    async function handleFile(e) {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setUploading(true);
+        setError("");
+        try {
+            const res = await uploadSellerFile(token, file, "brands");
+            if (res?.success) setImage(res.url);
+            else setError(res?.message || "Upload failed.");
+        } finally {
+            setUploading(false);
+            e.target.value = "";
+        }
+    }
+
+    async function handleSave(confirmMerge = false) {
+        const trimmed = name.trim();
+        if (trimmed.length < 2) return setError("Brand name must be at least 2 characters.");
+        setSaving(true);
+        setError("");
+        const res = await adminUpdateBrand(token, brand.brand_name, { newName: trimmed, brandImage: image, confirmMerge });
+        setSaving(false);
+        if (res?.mergeConflict) {
+            if (window.confirm(res.message + "\n\nProceed and merge?")) return handleSave(true);
+            return;
+        }
+        if (!res?.success) return setError(res?.message || "Couldn't save.");
+        onDone();
+    }
+
+    return (
+        <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/60 px-4 py-4 last:border-b-0">
+            <div className="flex items-center gap-3.5">
+                <button type="button" onClick={() => fileRef.current?.click()}
+                    className="relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white ring-1 ring-slate-200">
+                    {uploading ? <Loader2 className="h-4 w-4 animate-spin text-slate-400" /> :
+                        image ? <img src={image} alt="" className="h-full w-full object-cover" /> : <ImagePlus className="h-4 w-4 text-slate-300" />}
+                </button>
+                <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} className="hidden" />
+
+                <input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] font-bold focus:outline-none focus:ring-2 focus:ring-[#047084]/30"
+                    placeholder="Brand name"
+                />
+
+                <button onClick={() => fileRef.current?.click()}
+                    className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[12px] font-bold text-slate-600 hover:bg-slate-50">
+                    Change logo
+                </button>
+                {image && (
+                    <button onClick={() => setImage(null)}
+                        className="shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-2 text-slate-400 hover:bg-red-50 hover:text-[#c71f11]">
+                        <X className="h-3.5 w-3.5" />
+                    </button>
+                )}
+            </div>
+
+            {error && <p className="text-[12px] font-semibold text-[#c71f11]">{error}</p>}
+
+            <div className="flex items-center justify-end gap-2">
+                <button onClick={onCancel} className="rounded-lg px-3 py-2 text-[12.5px] font-bold text-slate-500 hover:bg-slate-100">
+                    Cancel
+                </button>
+                <button onClick={() => handleSave(false)} disabled={saving || uploading}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-[#047084] px-3.5 py-2 text-[12.5px] font-bold text-white disabled:opacity-50">
+                    {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Save
+                </button>
             </div>
         </div>
     );
@@ -55,21 +138,29 @@ export default function AdminCatalogReviewPage() {
     const [globalLoading, setGlobalLoading] = useState(false);
     const debounceRef = useRef(null);
 
-    // NEW — unmapped-view state. Separate mode from both the normal
-    // drill-down and global search, since "unmapped" isn't a node in the
-    // hierarchy — it's a cross-cutting view of orphaned rows.
     const [viewingUnmapped, setViewingUnmapped] = useState(false);
     const [unmappedTab, setUnmappedTab] = useState("brand_item");
     const [unmappedEntries, setUnmappedEntries] = useState([]);
     const [unmappedLoading, setUnmappedLoading] = useState(true);
     const [unmappedCounts, setUnmappedCounts] = useState({ subcategory: 0, generic_product: 0, brand_item: 0 });
 
+    // NEW — brands view state. Same "separate mode" pattern as unmapped:
+    // brands aren't a node in the category/subcategory/... hierarchy,
+    // they're a cross-cutting grouping of hs_generic_product_brands rows
+    // by brand_name.
+    const [viewingBrands, setViewingBrands] = useState(false);
+    const [brandsQuery, setBrandsQuery] = useState("");
+    const [brands, setBrands] = useState([]);
+    const [brandsLoading, setBrandsLoading] = useState(true);
+    const [editingBrand, setEditingBrand] = useState(null); // brand_name currently being edited
+    const brandsDebounceRef = useRef(null);
+
     const depth = path.length;
     const level = LEVEL_BY_DEPTH[depth];
     const parent = path[depth - 1] || null;
 
     useEffect(() => {
-        if (!token || !level || globalSearch || viewingUnmapped) return;
+        if (!token || !level || globalSearch || viewingUnmapped || viewingBrands) return;
         let active = true;
         setLoading(true);
         adminListCatalog(token, { level, status: "all", q, parentId: parent?.id }).then((res) => {
@@ -77,7 +168,7 @@ export default function AdminCatalogReviewPage() {
             if (active) setLoading(false);
         });
         return () => { active = false; };
-    }, [level, parent?.id, q, token, refreshKey, globalSearch, viewingUnmapped]);
+    }, [level, parent?.id, q, token, refreshKey, globalSearch, viewingUnmapped, viewingBrands]);
 
     useEffect(() => {
         if (!globalSearch || !token) return;
@@ -96,9 +187,6 @@ export default function AdminCatalogReviewPage() {
         return () => clearTimeout(debounceRef.current);
     }, [globalQuery, globalSearch, token]);
 
-    // NEW — badge counts, fetched once on mount and refreshed whenever
-    // anything changes (create/delete/map), so the root tile always
-    // reflects reality without the admin needing to open it first.
     useEffect(() => {
         if (!token) return;
         adminGetUnmappedCounts(token).then((res) => {
@@ -106,8 +194,6 @@ export default function AdminCatalogReviewPage() {
         });
     }, [token, refreshKey]);
 
-    // NEW — load the active tab's unmapped list whenever we're in that
-    // view or the tab changes.
     useEffect(() => {
         if (!viewingUnmapped || !token) return;
         let active = true;
@@ -118,6 +204,22 @@ export default function AdminCatalogReviewPage() {
         });
         return () => { active = false; };
     }, [viewingUnmapped, unmappedTab, token, refreshKey]);
+
+    // NEW — load brands whenever the brands view is open, the search
+    // query changes (debounced), or something was just saved (refreshKey).
+    useEffect(() => {
+        if (!viewingBrands || !token) return;
+        let active = true;
+        setBrandsLoading(true);
+        clearTimeout(brandsDebounceRef.current);
+        brandsDebounceRef.current = setTimeout(() => {
+            adminListBrands(token, brandsQuery).then((res) => {
+                if (active && res?.success) setBrands(res.brands ?? []);
+                if (active) setBrandsLoading(false);
+            });
+        }, brandsQuery ? 300 : 0);
+        return () => { active = false; clearTimeout(brandsDebounceRef.current); };
+    }, [viewingBrands, brandsQuery, token, refreshKey]);
 
     function drillInto(entry) {
         setPath((p) => [...p, { level, id: entry.id, name: entry.name }]);
@@ -131,11 +233,25 @@ export default function AdminCatalogReviewPage() {
 
     function openUnmapped() {
         setViewingUnmapped(true);
+        setViewingBrands(false);
         setGlobalSearch(false);
         setPath([]);
     }
     function closeUnmapped() {
         setViewingUnmapped(false);
+    }
+
+    // NEW — brands view open/close, mirroring openUnmapped/closeUnmapped.
+    function openBrands() {
+        setViewingBrands(true);
+        setViewingUnmapped(false);
+        setGlobalSearch(false);
+        setEditingBrand(null);
+        setPath([]);
+    }
+    function closeBrands() {
+        setViewingBrands(false);
+        setEditingBrand(null);
     }
 
     function jumpToResult(hit) {
@@ -149,10 +265,6 @@ export default function AdminCatalogReviewPage() {
         setGlobalResults([]);
     }
 
-    // NEW — an unmapped row of any level opens the detail page, which
-    // already renders the "needs mapping" banner + CascadingHierarchyPicker
-    // for fixing it, and (once added) the delete button for removing it
-    // outright instead of mapping it.
     function openUnmappedEntry(entry) {
         navigate(`/catalog/${unmappedTab}/${entry.id}`);
     }
@@ -173,7 +285,7 @@ export default function AdminCatalogReviewPage() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <h1 className="text-[20px] font-extrabold text-slate-900 sm:text-[22px]">Catalog</h1>
-                    {!globalSearch && !viewingUnmapped && (
+                    {!globalSearch && !viewingUnmapped && !viewingBrands && (
                         <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[12.5px] font-semibold text-slate-400">
                             <button onClick={() => setPath([])} className={depth === 0 ? "text-[#047084]" : "hover:text-slate-600"}>All categories</button>
                             {path.map((c, i) => (
@@ -190,10 +302,13 @@ export default function AdminCatalogReviewPage() {
                     {viewingUnmapped && (
                         <p className="mt-1.5 text-[12.5px] font-semibold text-slate-400">Items with no category / subcategory / generic-product parent set</p>
                     )}
+                    {viewingBrands && (
+                        <p className="mt-1.5 text-[12.5px] font-semibold text-slate-400">Rename a brand or update its logo — applies everywhere it's used</p>
+                    )}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2.5">
-                    {!viewingUnmapped && (
+                    {!viewingUnmapped && !viewingBrands && (
                         <div className="flex flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 shadow-sm shadow-slate-100 sm:flex-none">
                             <Search className="h-4 w-4 shrink-0 text-slate-400" />
                             <input
@@ -210,7 +325,25 @@ export default function AdminCatalogReviewPage() {
                         </div>
                     )}
 
-                    {!viewingUnmapped && (
+                    {/* NEW — brand search box, shown only in brands view */}
+                    {viewingBrands && (
+                        <div className="flex flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 shadow-sm shadow-slate-100 sm:flex-none">
+                            <Search className="h-4 w-4 shrink-0 text-slate-400" />
+                            <input
+                                value={brandsQuery}
+                                onChange={(e) => setBrandsQuery(e.target.value)}
+                                placeholder="Search brands…"
+                                className="w-full bg-transparent text-[13px] font-medium focus:outline-none sm:w-48"
+                            />
+                            {brandsQuery && (
+                                <button onClick={() => setBrandsQuery("")} className="shrink-0 text-slate-300 hover:text-slate-500">
+                                    <X className="h-3.5 w-3.5" />
+                                </button>
+                            )}
+                        </div>
+                    )}
+
+                    {!viewingUnmapped && !viewingBrands && (
                         <button
                             onClick={() => { setGlobalSearch((v) => !v); setGlobalQuery(""); setGlobalResults([]); }}
                             className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3.5 py-2.5 text-[13px] font-bold transition-colors ${globalSearch ? "border-[#047084]/30 bg-[#047084]/10 text-[#047084]" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
@@ -219,7 +352,15 @@ export default function AdminCatalogReviewPage() {
                         </button>
                     )}
 
-                    {/* NEW — Unmapped toggle, always visible regardless of mode */}
+                    {/* NEW — Brands toggle, always visible regardless of mode */}
+                    <button
+                        onClick={() => (viewingBrands ? closeBrands() : openBrands())}
+                        className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3.5 py-2.5 text-[13px] font-bold transition-colors ${viewingBrands ? "border-[#047084]/30 bg-[#047084]/10 text-[#047084]" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+                    >
+                        <BadgeCheck className="h-4 w-4" />
+                        {viewingBrands ? "Back to catalog" : "Brands"}
+                    </button>
+
                     <button
                         onClick={() => (viewingUnmapped ? closeUnmapped() : openUnmapped())}
                         className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3.5 py-2.5 text-[13px] font-bold transition-colors ${viewingUnmapped ? "border-amber-300 bg-amber-50 text-amber-700" : totalUnmapped > 0 ? "border-amber-200 bg-white text-amber-700 hover:bg-amber-50" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
@@ -228,13 +369,13 @@ export default function AdminCatalogReviewPage() {
                         {viewingUnmapped ? "Back to catalog" : `Unmapped${totalUnmapped > 0 ? ` (${totalUnmapped})` : ""}`}
                     </button>
 
-                    {!globalSearch && !viewingUnmapped && BULK_SUPPORTED.has(level) && (
+                    {!globalSearch && !viewingUnmapped && !viewingBrands && BULK_SUPPORTED.has(level) && (
                         <button onClick={() => setShowExcel(true)}
                             className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-[13px] font-bold text-slate-600 hover:bg-slate-50">
                             <FileSpreadsheet className="h-4 w-4" /> Bulk upload
                         </button>
                     )}
-                    {!globalSearch && !viewingUnmapped && (
+                    {!globalSearch && !viewingUnmapped && !viewingBrands && (
                         <button onClick={() => setShowCreate(true)}
                             className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[#047084] px-4 py-2.5 text-[13px] font-bold text-white shadow-sm shadow-[#047084]/20 transition-transform hover:scale-[1.02]">
                             <Plus className="h-4 w-4" /> Add {ADD_LABEL[level]}
@@ -243,8 +384,49 @@ export default function AdminCatalogReviewPage() {
                 </div>
             </div>
 
-            {/* NEW — Unmapped tabbed view */}
-            {viewingUnmapped ? (
+            {/* NEW — Brands view */}
+            {viewingBrands ? (
+                <div className="mt-6 divide-y divide-slate-100 rounded-xl border border-slate-100 bg-white shadow-sm shadow-slate-100/60">
+                    {brandsLoading && Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)}
+
+                    {!brandsLoading && brands.length === 0 && (
+                        <div className="flex flex-col items-center gap-2 py-14 text-center">
+                            <Tag className="h-5 w-5 text-slate-300" />
+                            <p className="text-[13px] font-bold text-slate-500">No brands found</p>
+                        </div>
+                    )}
+
+                    <AnimatePresence initial={false}>
+                        {!brandsLoading && brands.map((b) =>
+                            editingBrand === b.brand_name ? (
+                                <EditBrandRow
+                                    key={b.brand_name}
+                                    brand={b}
+                                    token={token}
+                                    onDone={() => { setEditingBrand(null); refresh(); }}
+                                    onCancel={() => setEditingBrand(null)}
+                                />
+                            ) : (
+                                <motion.div key={b.brand_name}
+                                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                                    className="group flex items-center gap-3.5 px-4 py-3.5 hover:bg-slate-50">
+                                    <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-50 ring-1 ring-slate-100">
+                                        {b.brand_image ? <img src={b.brand_image} alt="" className="h-full w-full object-cover" /> : <Tag className="h-5 w-5 text-slate-300" />}
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="truncate text-[14px] font-bold text-slate-900">{b.brand_name}</p>
+                                        <p className="text-[12px] font-medium text-slate-400">{b.item_count} item{b.item_count === 1 ? "" : "s"}</p>
+                                    </div>
+                                    <button onClick={() => setEditingBrand(b.brand_name)}
+                                        className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600" aria-label="Edit brand">
+                                        <Pencil className="h-3.5 w-3.5" />
+                                    </button>
+                                </motion.div>
+                            )
+                        )}
+                    </AnimatePresence>
+                </div>
+            ) : viewingUnmapped ? (
                 <>
                     <div className="mt-6 flex items-center gap-1.5 rounded-lg bg-slate-100 p-1">
                         {UNMAPPED_LEVELS.map((lvl) => (
@@ -422,7 +604,7 @@ export default function AdminCatalogReviewPage() {
                 </>
             )}
 
-            {!globalSearch && !viewingUnmapped && (
+            {!globalSearch && !viewingUnmapped && !viewingBrands && (
                 <motion.button onClick={() => setShowCreate(true)} whileTap={{ scale: 0.92 }}
                     className="fixed bottom-5 right-5 flex items-center justify-center rounded-full bg-[#047084] text-white shadow-lg shadow-[#047084]/30 sm:hidden"
                     style={{ height: 52, width: 52 }}>

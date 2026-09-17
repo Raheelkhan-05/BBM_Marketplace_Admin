@@ -722,6 +722,25 @@ export async function adminDownloadCatalogTemplate(token, level) {
   return res.blob();
 }
 
+
+export async function adminListBrands(token, q = "") {
+  const params = new URLSearchParams(q ? { q } : {});
+  const res = await fetch(`${API_BASE}/admin/brands?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return res.json();
+}
+
+export async function adminUpdateBrand(token, brandName, { newName, brandImage, confirmMerge } = {}) {
+  const res = await fetch(`${API_BASE}/admin/brands/${encodeURIComponent(brandName)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ newName, brandImage, confirmMerge }),
+  });
+  return res.json();
+}
+
+
 export async function adminBulkUploadCatalog(token, level, file, parentId) {
   const form = new FormData();
   form.append("file", file);
