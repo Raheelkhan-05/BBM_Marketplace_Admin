@@ -59,11 +59,13 @@ export async function verifyOtp(identifier, otp) {
 }
 
 export async function fetchMe(token) {
+  console.log("Admin Token : ", token);
+
   try {
-    const res = await fetch(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`${API_BASE}/auth/me-admin`, { headers: { Authorization: `Bearer ${token}` } });
     let data = {};
     try { data = await res.json(); } catch { /* non-JSON body */ }
-    // console.log("fetch me data : ", data);
+    console.log("fetch me data : ", data);
     return { ...data, status: res.status, success: res.ok && data?.success !== false };
   } catch (e) {
     return { success: false, status: 0, message: "Network error." };

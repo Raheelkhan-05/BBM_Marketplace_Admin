@@ -9,6 +9,9 @@ export default function AdminLayout() {
     if (initializing) return null;
     if (!isLoggedIn) return <Navigate to="/login" replace />;
     if (!profile) return <Navigate to="/login" replace />;   // <-- added: don't assume unauthorized
+
+    console.log("profile ", profile);
+
     if (profile.role !== "admin") return <div className="p-8 text-center text-slate-500">Not authorized.</div>;
 
     return (

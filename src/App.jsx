@@ -18,6 +18,7 @@ import AdminWalletSellersPage from "./pages/admin/AdminWalletSellersPage.jsx";
 import AdminDatabasePanel from "./pages/admin/AdminDatabasePanel.jsx";
 import AdminProductCommissionsPage from "./pages/admin/AdminProductCommissionsPage.jsx";
 import AdminHelpRequestsPage from "./pages/admin/AdminHelpRequestsPage.jsx";
+import AdminAuthPage from "./pages/AdminAuthPage.jsx";
 
 function App() {
   return (
@@ -26,7 +27,7 @@ function App() {
         <NotificationsProvider>
           <BrowserRouter>
             <Routes>
-              <Route path="/login" element={<AuthPage />} />
+              <Route path="/login" element={<AdminAuthPage />} />
 
               {/* Redirect bare "/" to somewhere useful — the login-gated
                   routes below still all keep their ORIGINAL /admin/...
