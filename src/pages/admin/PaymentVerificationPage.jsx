@@ -321,8 +321,8 @@ export default function PaymentVerificationPage() {
         setError(null);
         try {
             const res = queue === "orders"
-                ? await apiGet(`/payment-proofs?status=${tab}`, token)
-                : await apiGet(`/wallet/payments?status=${tab}`, token);
+                ? await apiGet(`/admin/payment-proofs?status=${tab}`, token)
+                : await apiGet(`/admin/wallet/payments?status=${tab}`, token);
             if (!res?.success) setError(res?.message || "Couldn't load payments.");
             else setItems(queue === "orders" ? (res.proofs || []) : (res.payments || []));
         } catch {
@@ -337,8 +337,8 @@ export default function PaymentVerificationPage() {
     const handleVerify = async (id) => {
         setActioning(id);
         const res = queue === "orders"
-            ? await apiPost(`/payment-proofs/${id}/verify`, token, { note: null })
-            : await apiPost(`/wallet/payments/${id}/verify`, token, { approve: true });
+            ? await apiPost(`/admin/payment-proofs/${id}/verify`, token, { note: null })
+            : await apiPost(`/admin/wallet/payments/${id}/verify`, token, { approve: true });
         setActioning(null);
         if (!res?.success) { setError(res?.message || "Couldn't verify this payment."); return; }
         setItems((prev) => prev.filter((p) => p.id !== id));
@@ -347,8 +347,8 @@ export default function PaymentVerificationPage() {
     const handleReject = async (id, note) => {
         setActioning(id);
         const res = queue === "orders"
-            ? await apiPost(`/payment-proofs/${id}/reject`, token, { note })
-            : await apiPost(`/wallet/payments/${id}/verify`, token, { approve: false, rejectionReason: note });
+            ? await apiPost(`/admin/payment-proofs/${id}/reject`, token, { note })
+            : await apiPost(`/admin/wallet/payments/${id}/verify`, token, { approve: false, rejectionReason: note });
         setActioning(null);
         if (!res?.success) { setError(res?.message || "Couldn't reject this payment."); return; }
         setItems((prev) => prev.filter((p) => p.id !== id));
