@@ -638,7 +638,7 @@ export async function fetchMySellerSubmissions(token, status) {
   const params = new URLSearchParams(status ? { status } : {});
   const res = await fetch(`${API_BASE}/seller/catalog/submissions?${params}`, { headers: { Authorization: `Bearer ${token}` } });
   const data = await res.json();
-  console.log("fetchMySellerSubmissions", data);
+  // console.log("fetchMySellerSubmissions", data);
   return data;
 }
 

@@ -101,7 +101,7 @@ export function AuthProvider({ children }) {
     };
   }, [runResync]);
 
-  const loadProfile = useCallback(async (token) => {
+  const loadProfile = useCallback(async (token, attempt = 0) => {
     if (!token) {
       setProfile(null);
       return;
@@ -120,10 +120,18 @@ export function AuthProvider({ children }) {
       }
       if (res?.status === 401) {
         await clearSession();
-      } else {
-        setProfile(null);
+        return;
       }
+      if (attempt < 2) {
+        await new Promise(r => setTimeout(r, 400 * (attempt + 1)));
+        return loadProfile(token, attempt + 1);
+      }
+      setProfile(null);
     } catch {
+      if (attempt < 2) {
+        await new Promise(r => setTimeout(r, 400 * (attempt + 1)));
+        return loadProfile(token, attempt + 1);
+      }
       setProfile(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
