@@ -947,7 +947,7 @@ function SellerDropdown({ item, state, onBuySeller, onSell, includeGst, sortMode
             <div
                 data-lenis-prevent
                 className="border-b px-3 py-2.5 sm:px-4"
-                style={{ borderColor: C.hairSoft, background: "#FCFBF9" }}
+                style={{ borderColor: C.hairSoft, background: "#FFFFFF" }}
             >
                 {/* Pricing moved up to the row itself — this header now
                     only carries the seller-count context. */}

@@ -1558,7 +1558,7 @@ export default function SellerManageListingsPage() {
             // that status.
             return (
                 <>
-                    <div className="min-h-screen" style={{ background: "#FCFBF9" }}>
+                    <div className="min-h-screen" style={{ background: "#FFFFFF" }}>
                         <div className="mx-auto flex max-w-md flex-col items-center px-6 py-24 text-center">
                             <span className="flex h-14 w-14 items-center justify-center rounded-full text-white" style={{ background: "linear-gradient(135deg,#047084,#7fb3bd)" }}>
                                 <Clock className="h-6 w-6" />
@@ -1591,7 +1591,7 @@ export default function SellerManageListingsPage() {
     }
 
     return (
-        <div className="min-h-screen bg-[#FCFBF9] text-slate-900 antialiased">
+        <div className="min-h-screen bg-[#FFFFFF] text-slate-900 antialiased">
             {/* No local <SmoothScrollProvider> here anymore — see import
                 comment above. This page just renders under the single
                 global instance main.jsx already provides. */}

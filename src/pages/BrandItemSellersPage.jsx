@@ -241,7 +241,7 @@ export default function BrandItemSellersPage() {
     };
 
     return (
-        <div className="min-h-screen bg-[#FCFBF9]">
+        <div className="min-h-screen bg-[#FFFFFF]">
             <div className="sticky top-0 z-20 border-b bg-white" style={{ borderColor: C.hair }}>
                 <div className="mx-auto max-w-7xl px-3 pt-3 sm:px-4">
                     <div className="flex items-center gap-2.5 pb-3">

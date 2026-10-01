@@ -247,7 +247,7 @@ export default function SellPublishProductPage() {
     const pendingDraft = !isEdit ? readPendingProductSubmission() : null;
 
     return (
-        <div className="mx-auto max-w-4xl min-h-screen px-4 pt-6 sm:px-6 bg-[#FCFBF9]">
+        <div className="mx-auto max-w-4xl min-h-screen px-4 pt-6 sm:px-6 bg-[#FFFFFF]">
             <h1 className="text-[clamp(1.7rem,3.5vw,1.9rem)] font-bold text-slate-900">{isEdit ? "Edit listing" : "List a product"}</h1>
             <p className="mt-1.5 text-[13.5px] tracking-wide font-medium text-slate-500">
                 {isEdit

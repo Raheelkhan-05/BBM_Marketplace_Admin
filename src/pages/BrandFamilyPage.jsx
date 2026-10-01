@@ -47,7 +47,7 @@ export default function BrandFamilyPage() {
     const categoryCount = categories.length;
 
     return (
-        <div className="min-h-screen bg-[#FCFBF9]">
+        <div className="min-h-screen bg-[#FFFFFF]">
             <div className="relative overflow-hidden" style={{ background: `linear-gradient(145deg, ${TEAL} 0%, ${TEAL_DARK} 45%, ${TEAL_DEEP} 100%)` }}>
                 <div className="mx-auto max-w-6xl px-4 pb-8 pt-5 sm:px-6 lg:px-8">
                     <button onClick={() => navigate("/browse-search")} className="text-[11.5px] font-semibold text-white/60 hover:text-white">All Categories</button>

@@ -71,7 +71,7 @@ export default function SellerStatusPage() {
 
       <button
         onClick={() => navigate("/seller/onboarding")}
-        className="mt-7 flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[13.5px] font-bold text-white shadow-[0_12px_24px_-10px_rgba(199,31,17,0.55)]"
+        className="mt-7 flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[13.5px] font-bold text-white "
         style={{ background: "linear-gradient(135deg, #d2462b 0%, #c71f11 100%)" }}
       >
         {isRejected ? <><Pencil className="h-4 w-4" /> Review & Resubmit</> : <>View / Edit Details <ArrowRight className="h-4 w-4" /></>}

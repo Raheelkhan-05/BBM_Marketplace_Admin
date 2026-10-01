@@ -30,7 +30,8 @@ html,
 body {
   font-family: "Amazon Ember", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
-  background-color: #FCFBF9;
+  /* background-color: #FFFFFF; */
+  background-color: #ffffff;
   color: #101828;
   letter-spacing: -0.01em;
 }

@@ -84,7 +84,7 @@ export default function NotificationBell() {
       <button
         ref={bellRef}
         onClick={() => setOpen((v) => !v)}
-        className="relative rounded-full bg-[#FCFBF9] p-1.5 text-slate-500 transition-colors duration-150 hover:text-[#047084]"
+        className="relative rounded-full bg-[#FFFFFF] p-1.5 text-slate-500 transition-colors duration-150 hover:text-[#047084]"
       >
         <motion.span
           animate={bumping ? { rotate: [0, -14, 11, -6, 0] } : { rotate: 0 }}

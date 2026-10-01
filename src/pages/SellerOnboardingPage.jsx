@@ -193,13 +193,13 @@ export function SellerOnboardingForm({ onSubmitted }) {
 
           {stepIndex < STEPS.length - 1 ? (
             <button type="button" onClick={goNext} disabled={saving}
-              className="flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[14.5px] font-bold tracking-wide text-white shadow-[0_12px_24px_-10px_rgba(199,31,17,0.55)]"
+              className="flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[14.5px] font-bold tracking-wide text-white "
               style={{ background: "linear-gradient(135deg, #d2462b 0%, #c71f11 100%)" }}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Continue <ArrowRight className="h-4 w-4" /></>}
             </button>
           ) : (
             <button type="button" onClick={handleSubmit} disabled={submitting}
-              className="flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[14.5px] font-bold tracking-wide text-white shadow-[0_12px_24px_-10px_rgba(199,31,17,0.55)]"
+              className="flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[14.5px] font-bold tracking-wide text-white "
               style={{ background: "linear-gradient(135deg, #d2462b 0%, #c71f11 100%)" }}>
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Submit <CheckCircle2 className="h-4 w-4" /></>}
             </button>

@@ -16,7 +16,7 @@ const C = {
 
 export default function HomePageSkeleton() {
   return (
-    <div className="min-h-screen bg-[#FCFBF9] antialiased overflow-x-hidden">
+    <div className="min-h-screen bg-[#FFFFFF] antialiased overflow-x-hidden">
       <main className="mx-auto max-w-[1400px] px-2.5 sm:px-4 lg:px-6 pb-5 sm:pb-20 pt-3 space-y-6">
         <HeroSkeleton />
         <span className="hidden md:block">

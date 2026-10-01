@@ -73,7 +73,7 @@ export default function BrandDetailPage() {
         navigate("/browse-search", { state: { imageResult: { resolved: true, stack: [{ id: category?.id, name: category?.name }].filter(Boolean) } } });
 
     return (
-        <div className="min-h-screen bg-[#FCFBF9]">
+        <div className="min-h-screen bg-[#FFFFFF]">
             {/* Hero */}
             <div className="relative overflow-hidden" style={{ background: `linear-gradient(145deg, ${TEAL} 0%, ${TEAL_DARK} 45%, ${TEAL_DEEP} 100%)` }}>
                 <div className="pointer-events-none absolute inset-0 opacity-[0.03]" style={{
@@ -234,7 +234,7 @@ export default function BrandDetailPage() {
 function PageSkeleton() {
     const pulse = { animate: { opacity: [0.35, 0.7, 0.35] }, transition: { duration: 1.8, repeat: Infinity, ease: "easeInOut" } };
     return (
-        <div className="min-h-screen bg-[#FCFBF9]">
+        <div className="min-h-screen bg-[#FFFFFF]">
             <div style={{ background: `linear-gradient(145deg, ${TEAL} 0%, ${TEAL_DARK} 100%)` }} className="pb-10 pt-4">
                 <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
                     <motion.div {...pulse} className="h-4 w-36 rounded-md bg-white/15" />

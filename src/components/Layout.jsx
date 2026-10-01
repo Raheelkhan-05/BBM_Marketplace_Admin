@@ -52,7 +52,7 @@ export default function Layout() {
               <HelpRequestProvider>
 
                 <LightboxVisibilityContext.Provider value={{ lightboxOpen, setLightboxOpen }}>
-                  <div className="relative min-h-screen bg-[#FCFBF9] overflow-x-clip">
+                  <div className="relative min-h-screen bg-[#FFFFFF] overflow-x-clip">
                     <div className="relative z-1">
                       <Header onOpenRfq={() => setRfqOpen(true)} />
 

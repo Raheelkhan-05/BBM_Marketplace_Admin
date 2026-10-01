@@ -137,7 +137,7 @@ export default function CategoryProductsPage() {
     const openProduct = (item) => navigate(`/product/${item.slug || item.id}/brands`, { state: { genericProduct: item, category: categoryHint } });
 
     return (
-        <div className="min-h-screen bg-[#FCFBF9]">
+        <div className="min-h-screen bg-[#FFFFFF]">
             <div className="sticky top-0 z-20 border-b bg-white" style={{ borderColor: C.hair }}>
                 <div className="mx-auto max-w-3xl px-3 pt-3 sm:px-4">
                     <div className="flex items-center gap-2.5 pb-3">

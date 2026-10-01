@@ -90,7 +90,7 @@ export default function SubcategoryLandingPage() {
         });
 
     return (
-        <div className="min-h-screen bg-[#FCFBF9]">
+        <div className="min-h-screen bg-[#FFFFFF]">
             <HeroBanner
                 subcategory={subcategory}
                 category={category}
@@ -559,7 +559,7 @@ function PageSkeleton() {
     };
 
     return (
-        <div className="min-h-screen bg-[#FCFBF9]">
+        <div className="min-h-screen bg-[#FFFFFF]">
             <div style={{ background: `linear-gradient(145deg, ${TEAL} 0%, ${TEAL_DARK} 100%)` }} className="pb-10 pt-4">
                 <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
                     <motion.div {...pulse} className="h-4 w-36 rounded-md bg-white/15 sm:w-44" />

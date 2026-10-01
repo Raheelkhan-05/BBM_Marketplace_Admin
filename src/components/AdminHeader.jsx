@@ -52,6 +52,12 @@ export const ADMIN_NAV_ITEMS = [
         to: "/support",
     },
     {
+        id: "disputes",
+        label: "Disputes",
+        icon: Skull,
+        to: "/disputes",
+    },
+    {
         id: "payments",
         label: "Payments",
         icon: IndianRupee,
