@@ -18,10 +18,12 @@ import HelpBulb from "./HelpBulb.jsx";
 
 const LightboxVisibilityContext = createContext(null);
 
+// Outside <Layout> (global modals, standalone routes) there is no bottom nav to hide,
+// so fall back to a harmless no-op instead of crashing.
+const LIGHTBOX_FALLBACK = { lightboxOpen: false, setLightboxOpen: () => { } };
+
 export function useLightboxVisibility() {
-  const ctx = useContext(LightboxVisibilityContext);
-  if (!ctx) throw new Error("useLightboxVisibility must be used inside <Layout>");
-  return ctx;
+  return useContext(LightboxVisibilityContext) || LIGHTBOX_FALLBACK;
 }
 
 export default function Layout() {
