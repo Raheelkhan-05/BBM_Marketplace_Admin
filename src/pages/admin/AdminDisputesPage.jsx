@@ -175,7 +175,7 @@ function LedgerView() {
                                         <span className="font-mono text-[11.5px] font-bold" style={{ color: C.ink }}>{e.order?.order_number}</span>
                                     </div>
                                     <p className="mt-1 truncate text-[11.5px] font-semibold" style={{ color: C.muted }}>
-                                        {e.entry_type === "seller_payout" ? e.seller_name : e.buyer_name} · {e.reference} · {e.trigger_source === "auto_window_elapsed" ? "auto (window elapsed)" : "dispute resolution"} · {fmtDateTime(e.created_at)}
+                                        {e.entry_type === "seller_payout" ? e.seller_name : e.buyer_name} · {e.reference} · {e.trigger_source === "auto_window_elapsed" ? "auto (window elapsed)" : e.trigger_source === "seller_no_response" ? "seller didn't accept in 24h" : "dispute resolution"} · {fmtDateTime(e.created_at)}
                                     </p>
                                 </div>
                                 <p className="shrink-0 text-[14px] font-extrabold tabular-nums" style={{ color: C.ink }}>₹{inr(e.amount)}</p>
