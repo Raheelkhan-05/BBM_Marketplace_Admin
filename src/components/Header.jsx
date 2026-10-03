@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Menu, X, ArrowUpRight, User, LogOut, ChevronDown, Store, ShieldCheck,
-  Clock3, ListChecks, BookOpen, Users, IndianRupee, RequestForQuote,
+  Clock3, ListChecks, BookOpen, Users, IndianRupee, FileText,
   Skull,
   Boxes, Lightbulb
 } from "lucide-react";
@@ -327,7 +327,7 @@ export default function Header({ onOpenRfq }) {
                               Product Review Requests
                             </SmartLink>
                             <SmartLink to="/rfqs" onClick={() => setAccountOpen(false)} className={DROPDOWN_ITEM}>
-                              <RequestForQuote className="h-3.5 w-3.5 text-[#0B7285]" />
+                              <FileText className="h-3.5 w-3.5 text-[#0B7285]" />
                               RFQ Requests
                             </SmartLink>
                             <SmartLink to="/support" onClick={() => setAccountOpen(false)} className={DROPDOWN_ITEM}>
