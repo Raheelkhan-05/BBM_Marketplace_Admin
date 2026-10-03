@@ -14,6 +14,7 @@ import {
     ChevronLeft,
     ChevronRight,
     Menu,
+    FileText,
     X,
 } from "lucide-react";
 
@@ -44,6 +45,12 @@ export const ADMIN_NAV_ITEMS = [
         label: "Product Review",
         icon: ListChecks,
         to: "/listings",
+    },
+    {
+        id: "rfqs",
+        label: "RFQ Requests",
+        icon: FileText,
+        to: "/rfqs",
     },
     {
         id: "support",
