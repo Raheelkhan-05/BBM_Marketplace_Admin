@@ -54,7 +54,7 @@ function App() {
                 <Route path="/support" element={<AdminHelpRequestsPage />} />
                 <Route path="/disputes" element={<AdminDisputesPage />} />
                 <Route path="/disputes/:id" element={<AdminDisputeDetailPage />} />
-                <Route path="/rfq" element={<AdminRfqPage />} />
+                <Route path="/rfqs" element={<AdminRfqPage />} />
               </Route>
             </Routes>
           </BrowserRouter>
