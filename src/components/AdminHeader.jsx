@@ -23,6 +23,12 @@ import NotificationBell from "./NotificationBell.jsx";
 
 export const ADMIN_NAV_ITEMS = [
     {
+        id: "finance",
+        label: "Finance",
+        icon: IndianRupee,
+        to: "/finance",
+    },
+    {
         id: "sellers",
         label: "Seller Applications",
         icon: ShieldCheck,

@@ -22,6 +22,7 @@ import AdminAuthPage from "./pages/AdminAuthPage.jsx";
 import AdminDisputesPage from "./pages/admin/AdminDisputesPage.jsx";
 import AdminDisputeDetailPage from "./pages/admin/AdminDisputeDetailPage.jsx";
 import AdminRfqPage from "./pages/admin/AdminRfqPage.jsx";
+import AdminFinancePage from "./pages/admin/AdminFinancePage.jsx";
 
 function App() {
   return (
@@ -55,6 +56,7 @@ function App() {
                 <Route path="/disputes" element={<AdminDisputesPage />} />
                 <Route path="/disputes/:id" element={<AdminDisputeDetailPage />} />
                 <Route path="/rfqs" element={<AdminRfqPage />} />
+                <Route path="/finance" element={<AdminFinancePage />} />
               </Route>
             </Routes>
           </BrowserRouter>

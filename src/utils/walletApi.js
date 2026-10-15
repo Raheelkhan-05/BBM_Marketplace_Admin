@@ -2,7 +2,11 @@
 import { apiGet, API_BASE } from "./api.js";
 
 export async function fetchWalletStatus(token) { return apiGet("/seller/wallet", token); }
-export async function fetchWalletTransactions(token) { return apiGet("/seller/wallet/transactions", token); }
+export async function fetchWalletTransactions(token, { limit = 20, cursor } = {}) {
+    const qs = new URLSearchParams({ limit: String(limit) });
+    if (cursor) qs.set("cursor", cursor);
+    return apiGet(`/seller/wallet/transactions?${qs.toString()}`, token);
+}
 export async function fetchWalletPayments(token) { return apiGet("/seller/wallet/payments", token); }
 
 // NEW — dummy QR details for a given top-up amount
