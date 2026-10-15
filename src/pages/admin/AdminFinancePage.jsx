@@ -48,15 +48,15 @@ const PRESETS = [
 const TABS = [{ k: "overview", t: "Overview" }, { k: "transactions", t: "Transactions" }, { k: "payouts", t: "Owed to sellers" }, { k: "audit", t: "Audit checks" }];
 
 function Skeleton({ h = 96 }) { return <div className="animate-pulse rounded-2xl" style={{ height: h, background: C.hairSoft }} />; }
-function ErrorLine({ children }) { return children ? <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-[12.5px] font-semibold text-red-700">{children}</p> : null; }
+function ErrorLine({ children }) { return children ? <p role="alert" className="mt-3 break-words rounded-lg bg-red-50 px-3 py-2 text-[12.5px] font-semibold leading-relaxed text-red-700">{children}</p> : null; }
 
 function Pager({ page, total, pageSize, onPage }) {
     const pages = Math.max(Math.ceil(total / pageSize), 1);
     if (pages <= 1) return null;
     return (
-        <div className="mt-4 flex items-center justify-center gap-3 text-[12.5px] font-bold">
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-[12px] font-bold sm:gap-3 sm:text-[12.5px]">
             <button disabled={page <= 1} onClick={() => onPage(page - 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40" style={{ borderColor: C.hair, color: C.ink }}>Prev</button>
-            <span style={{ color: C.muted }}>Page {page} of {pages} · {total.toLocaleString("en-IN")} records</span>
+            <span className="px-1 text-center" style={{ color: C.muted }}>Page {page} of {pages} · {total.toLocaleString("en-IN")} records</span>
             <button disabled={page >= pages} onClick={() => onPage(page + 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40" style={{ borderColor: C.hair, color: C.ink }}>Next</button>
         </div>
     );
@@ -65,10 +65,10 @@ function Pager({ page, total, pageSize, onPage }) {
 /* ------------------------------------------------------------------ overview */
 function Kpi({ label, value, sub, color = C.ink, warn }) {
     return (
-        <div className="rounded-2xl border bg-white p-4" style={{ borderColor: warn ? "#f59e0b80" : C.hair }}>
-            <p className="text-[12px] font-bold tracking-wide" style={{ color: C.muted }}>{label}</p>
-            <p className="mt-1.5 text-[22px] font-extrabold tabular-nums leading-tight" style={{ color }}>{money(value)}</p>
-            <p className="mt-1 text-[11.5px] font-semibold" style={{ color: C.muted }}>{sub}</p>
+        <div className="min-w-0 rounded-2xl border bg-white p-3.5 sm:p-4" style={{ borderColor: warn ? "#f59e0b80" : C.hair }}>
+            <p className="text-[11.5px] font-bold leading-snug tracking-wide sm:text-[12px]" style={{ color: C.muted }}>{label}</p>
+            <p className="mt-2 break-words text-[clamp(1.125rem,2.2vw,1.5rem)] font-extrabold leading-tight tabular-nums" style={{ color }}>{money(value)}</p>
+            <p className="mt-1.5 text-[11px] font-semibold leading-relaxed sm:text-[11.5px]" style={{ color: C.muted }}>{sub}</p>
         </div>
     );
 }
@@ -78,10 +78,10 @@ function FlowChart({ series, bucket }) {
     const colW = series.length > 45 ? 14 : series.length > 20 ? 22 : 34;
     return (
         <div>
-            <div className="mb-2 flex items-center gap-4 text-[11.5px] font-bold" style={{ color: C.muted }}>
+            <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] font-bold sm:text-[11.5px]" style={{ color: C.muted }}>
                 <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm" style={{ background: GREEN }} />Received</span>
                 <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm" style={{ background: RED }} />Refunds + seller payouts</span>
-                <span className="ml-auto font-medium">Tallest bar = {money(max)}</span>
+                <span className="w-full font-medium sm:ml-auto sm:w-auto">Tallest bar = {money(max)}</span>
             </div>
             <div className="overflow-x-auto pb-1">
                 <div className="flex h-44 items-end gap-1.5 border-b" style={{ borderColor: C.hair, minWidth: series.length * (colW + 6) }}>
@@ -121,14 +121,14 @@ function Overview({ token, from, to, bucket, onOpenTab }) {
     }, [token, from, to, bucket]);
     useEffect(() => { load(); return () => ctl.current?.abort(); }, [load]);
 
-    if (loading && !data) return <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} />)}</div>;
+    if (loading && !data) return <div className="mt-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} />)}</div>;
     if (!data) return <ErrorLine>{error}</ErrorLine>;
 
     const { totals: t, pending: p, series } = data;
     return (
         <div className={loading ? "opacity-60 transition-opacity" : ""}>
             <ErrorLine>{error}</ErrorLine>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="mt-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 <Kpi label="Received from buyers" value={t.received} color={GREEN} sub={`${t.receivedCount.toLocaleString("en-IN")} successful payments`} />
                 <Kpi label="Refunded to buyers" value={t.refunds} color={AMBER} sub={`${t.refundsCount.toLocaleString("en-IN")} completed refunds`} />
                 <Kpi label="Paid out to sellers" value={t.payouts} sub={`${t.payoutsCount.toLocaleString("en-IN")} payouts released`} />
@@ -138,13 +138,13 @@ function Overview({ token, from, to, bucket, onOpenTab }) {
                 <Kpi label="Seller wallet top-ups" value={t.topups} sub={`${t.topupsCount} gateway top-ups (not in the figures above)`} />
             </div>
 
-            <div className="mt-4 grid gap-3 lg:grid-cols-5">
-                <section className="rounded-2xl border bg-white p-4 lg:col-span-3" style={{ borderColor: C.hair }}>
+            <div className="mt-4 grid min-w-0 grid-cols-1 gap-3 xl:grid-cols-5">
+                <section className="min-w-0 rounded-2xl border bg-white p-3.5 sm:p-4 xl:col-span-3" style={{ borderColor: C.hair }}>
                     <h2 className="mb-3 text-[14px] font-extrabold" style={{ color: C.ink }}>Money flow by {bucket}</h2>
                     {series.length ? <FlowChart series={series} bucket={bucket} /> : <p className="py-10 text-center text-[13px]" style={{ color: C.muted }}>No data for this range.</p>}
                 </section>
 
-                <section className="rounded-2xl border bg-white p-4 lg:col-span-2" style={{ borderColor: C.hair }}>
+                <section className="min-w-0 rounded-2xl border bg-white p-3.5 sm:p-4 xl:col-span-2" style={{ borderColor: C.hair }}>
                     <h2 className="mb-3 text-[14px] font-extrabold" style={{ color: C.ink }}>How the numbers add up</h2>
                     {[
                         ["Received from buyers", t.received, GREEN, ""],
@@ -167,9 +167,9 @@ function Overview({ token, from, to, bucket, onOpenTab }) {
                 </section>
             </div>
 
-            <section className="mt-4 rounded-2xl border bg-white p-4" style={{ borderColor: C.hair }}>
+            <section className="mt-4 min-w-0 rounded-2xl border bg-white p-3.5 sm:p-4" style={{ borderColor: C.hair }}>
                 <h2 className="mb-3 text-[14px] font-extrabold" style={{ color: C.ink }}>Breakdown by {bucket}</h2>
-                <div className="overflow-x-auto">
+                <div className="-mx-1 overflow-x-auto px-1 pb-1">
                     <table className="w-full min-w-[640px] text-[12.5px]">
                         <thead>
                             <tr className="border-b text-left" style={{ borderColor: C.hair, color: C.muted }}>
@@ -251,26 +251,26 @@ function TransactionsTab({ token, from, to, onOpen }) {
     const sel = "rounded-xl border bg-white px-3 py-2 text-[12.5px] font-bold";
     return (
         <>
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-                <div className="flex min-w-[220px] flex-1 items-center gap-2 rounded-xl border bg-white px-3 py-2" style={{ borderColor: C.hair }}>
+            <div className="mt-4 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(240px,1fr)_auto_auto_auto]">
+                <div className="flex min-w-0 items-center gap-2 rounded-xl border bg-white px-3 py-2 sm:col-span-2 xl:col-span-1" style={{ borderColor: C.hair }}>
                     <Search className="h-3.5 w-3.5" style={{ color: C.muted }} />
                     <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search reference, order number or name…" className="w-full text-[13px] font-medium outline-none" />
                 </div>
-                <select value={kind} onChange={(e) => setKind(e.target.value)} className={sel} style={{ borderColor: C.hair, color: C.ink }}>
+                <select value={kind} onChange={(e) => setKind(e.target.value)} className={`${sel} min-w-0 w-full sm:w-full xl:w-auto`} style={{ borderColor: C.hair, color: C.ink }}>
                     <option value="">All types</option>
                     {Object.entries(KIND).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                 </select>
-                <select value={status} onChange={(e) => setStatus(e.target.value)} className={sel} style={{ borderColor: C.hair, color: C.ink }}>
+                <select value={status} onChange={(e) => setStatus(e.target.value)} className={`${sel} min-w-0 w-full sm:w-full xl:w-auto`} style={{ borderColor: C.hair, color: C.ink }}>
                     <option value="">All statuses</option>
                     {["success", "pending", "initiated", "failed", "expired", "needs_review", "queued", "approved", "rejected"].map((s) => <option key={s} value={s}>{s.replace("_", " ")}</option>)}
                 </select>
-                <button onClick={exportCsv} disabled={exporting} className="flex items-center gap-1.5 rounded-xl border bg-white px-3 py-2 text-[12.5px] font-bold disabled:opacity-50" style={{ borderColor: C.hair, color: C.secondary }}>
+                <button onClick={exportCsv} disabled={exporting} className="flex min-h-10 w-full items-center justify-center gap-1.5 rounded-xl border bg-white px-3 py-2 text-[12.5px] font-bold disabled:opacity-50 sm:col-span-2 xl:col-span-1 xl:w-auto" style={{ borderColor: C.hair, color: C.secondary }}>
                     {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />} Export CSV
                 </button>
             </div>
             <ErrorLine>{error}</ErrorLine>
 
-            <div className="mt-3 overflow-x-auto rounded-2xl border bg-white" style={{ borderColor: C.hair }}>
+            <div className="mt-3 hidden overflow-x-auto rounded-2xl border bg-white xl:block" style={{ borderColor: C.hair }}>
                 <table className="w-full min-w-[900px] text-[12.5px]">
                     <thead>
                         <tr className="border-b text-left" style={{ borderColor: C.hair, color: C.muted, background: "#fafbfb" }}>
@@ -302,8 +302,34 @@ function TransactionsTab({ token, from, to, onOpen }) {
                     </tbody>
                 </table>
             </div>
+
+            <div className={`mt-3 grid gap-2 xl:hidden ${loading ? "opacity-60" : ""}`}>
+                {data.transactions.length === 0 && !loading && (
+                    <div className="rounded-2xl border bg-white px-4 py-10 text-center text-[13px] font-semibold" style={{ borderColor: C.hair, color: C.muted }}>No transactions match these filters.</div>
+                )}
+                {data.transactions.map((t) => {
+                    const k = KIND[t.kind] || { label: t.kind, tone: "neutral", dir: "none" };
+                    const sign = k.dir === "in" ? "+" : k.dir === "out" ? "−" : "";
+                    return (
+                        <button type="button" key={`mobile-${t.kind}-${t.id}`} onClick={() => onOpen(t.kind, t.id)} className="w-full min-w-0 rounded-2xl border bg-white p-3.5 text-left transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2" style={{ borderColor: C.hair }}>
+                            <div className="flex min-w-0 items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-1.5"><Chip tone={k.tone}>{k.label}</Chip><Chip tone={statusTone(t.status)}>{(t.status || "unknown").replace(/_/g, " ")}</Chip></div>
+                                    <p className="mt-2 break-all font-mono text-[11px] font-semibold" style={{ color: C.ink }}>{t.reference || "No reference"}</p>
+                                    <p className="mt-1 text-[11px] leading-relaxed" style={{ color: C.muted }}>{fmtIST(t.at)}</p>
+                                </div>
+                                <p className="shrink-0 text-right text-[13px] font-extrabold tabular-nums" style={{ color: k.dir === "in" ? GREEN : k.dir === "out" ? RED : C.muted }}>{sign}{money(t.amount)}</p>
+                            </div>
+                            <div className="mt-3 grid grid-cols-1 gap-2 border-t pt-3 text-[12px] sm:grid-cols-2" style={{ borderColor: C.hairSoft }}>
+                                <div className="min-w-0"><p style={{ color: C.muted }}>Party</p><p className="break-words font-semibold" style={{ color: C.ink }}>{t.party || "—"}</p>{t.counterparty && <p className="break-words text-[11px]" style={{ color: C.muted }}>{t.counterparty}</p>}</div>
+                                <div className="min-w-0"><p style={{ color: C.muted }}>Order / cart</p><p className="break-all font-mono text-[11px]" style={{ color: C.ink }}>{t.orderNumber || "—"}</p></div>
+                            </div>
+                        </button>
+                    );
+                })}
+            </div>
             <Pager page={page} total={data.total} pageSize={data.pageSize} onPage={setPage} />
-            <p className="mt-3 text-[11px] font-medium" style={{ color: C.muted }}>
+            <p className="mt-3 text-[11px] leading-relaxed font-medium" style={{ color: C.muted }}>
                 “Refund (dispute ledger)” lines mirror a refund to the buyer and are listed for audit only — they are never added to the totals, so nothing is counted twice. Click any row for its full audit trail.
             </p>
         </>
@@ -323,12 +349,12 @@ function PayoutsTab({ token }) {
     const tot = rows.reduce((a, r) => ({ held: a.held + r.held, disputed: a.disputed + r.disputed }), { held: 0, disputed: 0 });
     return (
         <>
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="mt-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 <Kpi label="Waiting out the dispute window" value={tot.held} sub="Released automatically when the window ends" />
                 <Kpi label="On hold · disputed" value={tot.disputed} color={AMBER} sub="Released only after an admin decision" />
                 <Kpi label="Total owed to sellers" value={tot.held + tot.disputed} sub={`${rows.length} seller${rows.length === 1 ? "" : "s"}`} />
             </div>
-            <div className="mt-3 overflow-x-auto rounded-2xl border bg-white" style={{ borderColor: C.hair }}>
+            <div className="mt-3 hidden overflow-x-auto rounded-2xl border bg-white xl:block" style={{ borderColor: C.hair }}>
                 <table className="w-full min-w-[720px] text-[12.5px]">
                     <thead>
                         <tr className="border-b text-left" style={{ borderColor: C.hair, color: C.muted, background: "#fafbfb" }}>
@@ -356,6 +382,22 @@ function PayoutsTab({ token }) {
                     </tbody>
                 </table>
             </div>
+            <div className="mt-3 grid gap-2 xl:hidden">
+                {rows.length === 0 && <div className="rounded-2xl border bg-white px-4 py-10 text-center text-[13px] font-semibold" style={{ borderColor: C.hair, color: C.muted }}>Nothing is owed to any seller right now.</div>}
+                {rows.map((r) => (
+                    <article key={`mobile-${r.sellerId}`} className="min-w-0 rounded-2xl border bg-white p-3.5" style={{ borderColor: C.hair }}>
+                        <div className="flex min-w-0 items-start justify-between gap-3">
+                            <div className="min-w-0"><p className="break-words text-[13px] font-extrabold" style={{ color: C.ink }}>{r.sellerName}</p>{r.overdueCount > 0 && <div className="mt-1"><Chip tone="warn">{r.overdueCount} overdue</Chip></div>}</div>
+                            <div className="shrink-0 text-right"><p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: C.muted }}>Total owed</p><p className="mt-1 text-[14px] font-extrabold tabular-nums" style={{ color: C.ink }}>{money(r.held + r.disputed)}</p></div>
+                        </div>
+                        <div className="mt-3 grid grid-cols-2 gap-2 border-t pt-3" style={{ borderColor: C.hairSoft }}>
+                            <div><p className="text-[11px]" style={{ color: C.muted }}>In dispute window</p><p className="mt-1 text-[12px] font-bold tabular-nums">{money(r.held)} <span className="font-medium" style={{ color: C.muted }}>({r.heldCount})</span></p></div>
+                            <div><p className="text-[11px]" style={{ color: C.muted }}>Disputed</p><p className="mt-1 text-[12px] font-bold tabular-nums">{money(r.disputed)} <span className="font-medium" style={{ color: C.muted }}>({r.disputedCount})</span></p></div>
+                        </div>
+                        <div className="mt-3 border-t pt-2" style={{ borderColor: C.hairSoft }}><p className="text-[11px]" style={{ color: C.muted }}>Next release (IST)</p><p className="mt-1 text-[12px] font-semibold" style={{ color: C.ink }}>{fmtIST(r.nextRelease)}</p></div>
+                    </article>
+                ))}
+            </div>
         </>
     );
 }
@@ -376,8 +418,8 @@ function AuditTab({ token, onOpen }) {
     if (!data) return error ? <ErrorLine>{error}</ErrorLine> : <div className="mt-4"><Skeleton h={160} /></div>;
     return (
         <>
-            <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border bg-white p-4" style={{ borderColor: data.healthy ? "#34d39980" : "#f59e0b80" }}>
-                <div className="flex items-center gap-2.5">
+            <div className="mt-4 flex flex-col items-start justify-between gap-3 rounded-2xl border bg-white p-3.5 sm:flex-row sm:items-center sm:p-4" style={{ borderColor: data.healthy ? "#34d39980" : "#f59e0b80" }}>
+                <div className="flex min-w-0 items-start gap-2.5 sm:items-center">
                     {data.healthy ? <CheckCircle2 className="h-5 w-5" style={{ color: GREEN }} /> : <AlertTriangle className="h-5 w-5" style={{ color: AMBER }} />}
                     <div>
                         <p className="text-[14px] font-extrabold" style={{ color: C.ink }}>{data.healthy ? "All checks passed" : "Some records need attention"}</p>
@@ -392,28 +434,42 @@ function AuditTab({ token, onOpen }) {
             <div className="mt-3 flex flex-col gap-3">
                 {data.checks.map((c) => (
                     <section key={c.key} className="rounded-2xl border bg-white p-4" style={{ borderColor: c.count ? "#f59e0b60" : C.hair }}>
-                        <div className="flex items-start justify-between gap-3">
-                            <div>
+                        <div className="flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-start">
+                            <div className="min-w-0">
                                 <h3 className="text-[13.5px] font-extrabold" style={{ color: C.ink }}>{c.title}</h3>
                                 <p className="mt-0.5 text-[12px] font-medium" style={{ color: C.muted }}>{c.help}</p>
                             </div>
                             <Chip tone={c.count ? "warn" : "success"}>{c.count ? `${c.count} found` : "Clear"}</Chip>
                         </div>
                         {c.rows.length > 0 && (
-                            <div className="mt-3 overflow-x-auto">
-                                <table className="w-full min-w-[560px] text-[12px]">
-                                    <tbody>
-                                        {c.rows.map((r) => (
-                                            <tr key={r.id} onClick={r.kind ? () => onOpen(r.kind, r.id) : undefined} className={`border-t ${r.kind ? "cursor-pointer hover:bg-[#fafbfb]" : ""}`} style={{ borderColor: C.hairSoft }}>
-                                                <td className="py-2 font-mono font-semibold" style={{ color: C.ink }}>{r.reference}</td>
-                                                <td className="py-2 text-right font-bold tabular-nums">{money(r.amount)}</td>
-                                                <td className="px-3 py-2" style={{ color: C.muted }}>{r.note}</td>
-                                                <td className="whitespace-nowrap py-2 text-right" style={{ color: C.muted }}>{fmtIST(r.at)}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                                {c.count > c.rows.length && <p className="mt-1 text-[11px] font-semibold" style={{ color: C.muted }}>Showing the first {c.rows.length} of {c.count}.</p>}
+                            <div className="mt-3 min-w-0">
+                                <div className="hidden overflow-x-auto sm:block">
+                                    <table className="w-full min-w-[560px] text-[12px]">
+                                        <tbody>
+                                            {c.rows.map((r) => (
+                                                <tr key={r.id} onClick={r.kind ? () => onOpen(r.kind, r.id) : undefined} className={`border-t ${r.kind ? "cursor-pointer hover:bg-[#fafbfb]" : ""}`} style={{ borderColor: C.hairSoft }}>
+                                                    <td className="py-2 font-mono font-semibold" style={{ color: C.ink }}>{r.reference}</td>
+                                                    <td className="py-2 text-right font-bold tabular-nums">{money(r.amount)}</td>
+                                                    <td className="px-3 py-2" style={{ color: C.muted }}>{r.note}</td>
+                                                    <td className="whitespace-nowrap py-2 text-right" style={{ color: C.muted }}>{fmtIST(r.at)}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div className="grid gap-2 sm:hidden">
+                                    {c.rows.map((r) => (
+                                        <button type="button" key={`mobile-${r.id}`} disabled={!r.kind} onClick={() => r.kind && onOpen(r.kind, r.id)} className="w-full min-w-0 rounded-xl border p-3 text-left disabled:cursor-default" style={{ borderColor: C.hairSoft, background: "#fff" }}>
+                                            <div className="flex min-w-0 items-start justify-between gap-3">
+                                                <span className="min-w-0 break-all font-mono text-[11px] font-bold" style={{ color: C.ink }}>{r.reference || "No reference"}</span>
+                                                <span className="shrink-0 text-[12px] font-extrabold tabular-nums" style={{ color: C.ink }}>{money(r.amount)}</span>
+                                            </div>
+                                            <p className="mt-1 break-words text-[11.5px] leading-relaxed" style={{ color: C.muted }}>{r.note}</p>
+                                            <p className="mt-2 text-[10.5px] font-medium" style={{ color: C.muted }}>{fmtIST(r.at)}</p>
+                                        </button>
+                                    ))}
+                                </div>
+                                {c.count > c.rows.length && <p className="mt-2 text-[11px] font-semibold" style={{ color: C.muted }}>Showing the first {c.rows.length} of {c.count}.</p>}
                             </div>
                         )}
                     </section>
@@ -453,7 +509,7 @@ function DetailDrawer({ token, target, onClose }) {
     return (
         <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-label="Transaction audit trail">
             <button className="absolute inset-0 bg-black/30" onClick={onClose} aria-label="Close" />
-            <aside className="relative h-full w-full max-w-xl overflow-y-auto bg-white p-5 shadow-xl">
+            <aside className="relative h-full w-full max-w-xl overflow-y-auto bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-xl sm:p-5">
                 <div className="flex items-start justify-between gap-3">
                     <div>
                         <Chip tone={k?.tone}>{k?.label}</Chip>
@@ -468,8 +524,8 @@ function DetailDrawer({ token, target, onClose }) {
                         <h3 className="mt-5 text-[12.5px] font-extrabold" style={{ color: C.ink }}>Record</h3>
                         <dl className="mt-2 divide-y rounded-xl border text-[12px]" style={{ borderColor: C.hair }}>
                             {Object.entries(d.record).filter(([, v]) => v !== null && v !== "").map(([key, v]) => (
-                                <div key={key} className="flex gap-3 px-3 py-1.5" style={{ borderColor: C.hairSoft }}>
-                                    <dt className="w-40 shrink-0 font-semibold" style={{ color: C.muted }}>{key.replace(/_/g, " ")}</dt>
+                                <div key={key} className="flex flex-col gap-1 px-3 py-2 sm:flex-row sm:gap-3" style={{ borderColor: C.hairSoft }}>
+                                    <dt className="shrink-0 font-semibold capitalize sm:w-40" style={{ color: C.muted }}>{key.replace(/_/g, " ")}</dt>
                                     <dd className="min-w-0 break-words font-medium" style={{ color: C.ink }}>{fieldValue(key, v)}</dd>
                                 </div>
                             ))}
@@ -481,8 +537,8 @@ function DetailDrawer({ token, target, onClose }) {
                                 <div className="mt-2 flex flex-col gap-2">
                                     {d.orders.map((o) => (
                                         <div key={o.id} className="rounded-xl border p-3 text-[12px]" style={{ borderColor: C.hair }}>
-                                            <div className="flex items-center justify-between">
-                                                <span className="font-mono font-bold" style={{ color: C.ink }}>{o.order_number}</span>
+                                            <div className="flex flex-wrap items-start justify-between gap-2">
+                                                <span className="break-all font-mono font-bold" style={{ color: C.ink }}>{o.order_number}</span>
                                                 <span className="font-extrabold tabular-nums">{money(o.total_amount)}</span>
                                             </div>
                                             <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -501,9 +557,9 @@ function DetailDrawer({ token, target, onClose }) {
                                 <h3 className="mt-5 text-[12.5px] font-extrabold" style={{ color: C.ink }}>Related money movements</h3>
                                 <div className="mt-2 flex flex-col gap-2">
                                     {d.related.map((r, i) => (
-                                        <div key={i} className="flex items-center justify-between rounded-xl border px-3 py-2 text-[12px]" style={{ borderColor: C.hair }}>
-                                            <span><b style={{ color: C.ink }}>{r.type}</b> <span className="font-mono" style={{ color: C.muted }}>{r.reference}</span></span>
-                                            <span className="flex items-center gap-2"><span className="font-extrabold tabular-nums">{money(r.amount)}</span><Chip tone={statusTone(r.status)}>{r.status}</Chip></span>
+                                        <div key={i} className="flex flex-col gap-2 rounded-xl border px-3 py-2 text-[12px] sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: C.hair }}>
+                                            <span className="min-w-0 break-words"><b style={{ color: C.ink }}>{r.type}</b> <span className="break-all font-mono" style={{ color: C.muted }}>{r.reference}</span></span>
+                                            <span className="flex flex-wrap items-center gap-2 sm:shrink-0"><span className="font-extrabold tabular-nums">{money(r.amount)}</span><Chip tone={statusTone(r.status)}>{r.status}</Chip></span>
                                         </div>
                                     ))}
                                 </div>
@@ -515,8 +571,8 @@ function DetailDrawer({ token, target, onClose }) {
                             <ol className="mt-2 flex flex-col gap-2">
                                 {d.events.map((e) => (
                                     <li key={e.id} className="rounded-xl border p-3 text-[12px]" style={{ borderColor: C.hair }}>
-                                        <div className="flex flex-wrap items-center justify-between gap-2">
-                                            <span className="font-bold" style={{ color: C.ink }}>{(e.source || "event").replace(/_/g, " ")}{e.response_code ? ` · ${e.response_code}` : ""}</span>
+                                        <div className="flex flex-col items-start justify-between gap-1.5 sm:flex-row sm:items-center sm:gap-2">
+                                            <span className="break-words font-bold" style={{ color: C.ink }}>{(e.source || "event").replace(/_/g, " ")}{e.response_code ? ` · ${e.response_code}` : ""}</span>
                                             <span style={{ color: C.muted }}>{fmtIST(e.created_at)}</span>
                                         </div>
                                         {e.hash_valid !== undefined && e.hash_valid !== null && (
@@ -555,41 +611,41 @@ export default function AdminFinancePage() {
     const setTo = (v) => v && setRange([v < from ? v : from, v]);
 
     return (
-        <div className="mx-auto min-h-screen max-w-6xl px-2.5 pb-12 pt-3 sm:px-4">
-            <div className="mt-3 flex items-center gap-3">
-                <button onClick={() => navigate(-1)} className="flex h-9 w-9 items-center justify-center rounded-full border" style={{ borderColor: C.hair, color: C.ink }} aria-label="Back"><ArrowLeft className="h-4 w-4" /></button>
-                <div>
-                    <h1 className="font-extrabold tracking-wide" style={{ color: C.ink, fontSize: "clamp(20px,1.8vw,26px)" }}>Finance &amp; Payments</h1>
-                    <p className="text-[12px] font-medium" style={{ color: C.muted }}>Money received, refunded, paid out and still owed — all times in IST.</p>
+        <main className="mx-auto min-h-screen w-full max-w-screen-2xl min-w-0 px-3 pb-8 pt-3 sm:px-5 sm:pb-10 md:px-6 lg:px-8">
+            <div className="mt-2 flex min-w-0 items-start gap-3 sm:mt-3 sm:items-center">
+                <button onClick={() => navigate(-1)} className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border sm:mt-0" style={{ borderColor: C.hair, color: C.ink }} aria-label="Back"><ArrowLeft className="h-4 w-4" /></button>
+                <div className="min-w-0">
+                    <h1 className="text-[clamp(1.25rem,2.5vw,1.75rem)] font-extrabold tracking-tight" style={{ color: C.ink }}>Finance &amp; Payments</h1>
+                    <p className="mt-1 max-w-2xl text-[12px] leading-relaxed font-medium sm:text-[13px]" style={{ color: C.muted }}>Money received, refunded, paid out and still owed. All times are shown in IST.</p>
                 </div>
             </div>
 
             {/* range controls */}
-            <div className="mt-4 flex flex-wrap items-center gap-2 rounded-2xl border bg-white p-3" style={{ borderColor: C.hair }}>
-                <div className="flex flex-wrap gap-1.5">
+            <section className="mt-4 grid min-w-0 grid-cols-1 gap-3 rounded-2xl border bg-white p-3 sm:p-4 xl:grid-cols-[minmax(0,1fr)_auto_auto] xl:items-center" style={{ borderColor: C.hair }} aria-label="Finance date range and grouping">
+                <div className="flex min-w-0 flex-wrap gap-1.5">
                     {PRESETS.map((p) => {
                         const on = activePreset === p.key;
                         return <button key={p.key} onClick={() => setRange(p.range())} className="rounded-full border px-3 py-1.5 text-[11.5px] font-bold"
                             style={{ borderColor: on ? C.primary : C.hair, background: on ? C.primary : "#fff", color: on ? "#fff" : C.muted }}>{p.label}</button>;
                     })}
                 </div>
-                <div className="flex items-center gap-1.5">
-                    <input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} className={inputCls} style={{ borderColor: C.hair, color: C.ink }} aria-label="From date" />
-                    <span className="text-[12px]" style={{ color: C.muted }}>to</span>
-                    <input type="date" value={to} min={from} max={todayIST()} onChange={(e) => setTo(e.target.value)} className={inputCls} style={{ borderColor: C.hair, color: C.ink }} aria-label="To date" />
+                <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:flex sm:flex-wrap">
+                    <input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} className={`${inputCls} min-w-0 w-full sm:w-auto`} style={{ borderColor: C.hair, color: C.ink }} aria-label="From date" />
+                    <span className="text-center text-[12px]" style={{ color: C.muted }}>to</span>
+                    <input type="date" value={to} min={from} max={todayIST()} onChange={(e) => setTo(e.target.value)} className={`${inputCls} min-w-0 w-full sm:w-auto`} style={{ borderColor: C.hair, color: C.ink }} aria-label="To date" />
                 </div>
-                <div className="ml-auto flex items-center gap-1 rounded-lg border p-0.5" style={{ borderColor: C.hair, background: "#fafbfb" }} role="group" aria-label="Group by">
+                <div className="flex w-full items-center gap-1 rounded-lg border p-0.5 sm:w-fit xl:justify-self-end" style={{ borderColor: C.hair, background: "#fafbfb" }} role="group" aria-label="Group by">
                     {["day", "week", "month"].map((b) => (
-                        <button key={b} onClick={() => setBucket(b)} className="rounded-md px-3 py-1 text-[12px] font-bold capitalize"
+                        <button key={b} onClick={() => setBucket(b)} className="min-h-8 flex-1 rounded-md px-3 py-1 text-[12px] font-bold capitalize sm:flex-none"
                             style={{ background: bucket === b ? C.primary : "transparent", color: bucket === b ? "#fff" : C.muted }}>{b}</button>
                     ))}
                 </div>
-            </div>
+            </section>
 
             {/* tabs */}
             <div className="mt-4 grid grid-cols-2 gap-1 rounded-xl border p-1 sm:grid-cols-4" style={{ borderColor: C.hair, background: "#fafbfb" }} role="tablist">
                 {TABS.map(({ k, t }) => (
-                    <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className="rounded-md px-4 py-1.5 text-[13px] font-bold tracking-wide"
+                    <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className="min-h-10 rounded-lg px-2 py-2 text-[12px] font-bold tracking-tight transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 sm:px-3 sm:text-[13px]"
                         style={{ background: tab === k ? C.primary : "transparent", color: tab === k ? "#fff" : C.muted }}>{t}</button>
                 ))}
             </div>
@@ -600,6 +656,6 @@ export default function AdminFinancePage() {
             {tab === "audit" && <AuditTab token={token} onOpen={(kind, id) => setOpen({ kind, id })} />}
 
             {open && <DetailDrawer token={token} target={open} onClose={() => setOpen(null)} />}
-        </div>
+        </main>
     );
 }
