@@ -59,11 +59,13 @@ export async function verifyOtp(identifier, otp) {
 }
 
 export async function fetchMe(token) {
+  console.log("Admin Token : ", token);
+
   try {
-    const res = await fetch(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`${API_BASE}/auth/me-admin`, { headers: { Authorization: `Bearer ${token}` } });
     let data = {};
     try { data = await res.json(); } catch { /* non-JSON body */ }
-    // console.log("fetch me data : ", data);
+    console.log("fetch me data : ", data);
     return { ...data, status: res.status, success: res.ok && data?.success !== false };
   } catch (e) {
     return { success: false, status: 0, message: "Network error." };
@@ -188,14 +190,6 @@ export async function fetchSellerOwnTransportOptions(token) {
   return res.json();
 }
 
-export async function fetchSellerOwnGstin(token) {
-  const res = await fetch(`${API_BASE}/seller/gstin`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    credentials: "include",
-  });
-  try { return await res.json(); } catch { return { success: false }; }
-}
-
 export async function fetchSellerBankDetails(token) {
   const res = await fetch(`${API_BASE}/seller/bank-details`, { headers: { Authorization: `Bearer ${token}` } });
   return res.json();
@@ -293,19 +287,9 @@ export async function adminSearchUsers(token, q) {
   const res = await fetch(`${API_BASE}/admin/users/search?q=${encodeURIComponent(q)}`, { headers: { Authorization: `Bearer ${token}` } });
   return res.json();
 }
-export async function adminListAdmins(token) {
-  // console.log(token);
-  const res = await fetch(`${API_BASE}/admin/admins`, { headers: { Authorization: `Bearer ${token}` } });
-  return res.json();
-}
+
 export async function adminPromoteUser(token, userId) {
   const res = await fetch(`${API_BASE}/admin/admins/promote`, {
-    method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ userId }),
-  });
-  return res.json();
-}
-export async function adminDemoteUser(token, userId) {
-  const res = await fetch(`${API_BASE}/admin/admins/demote`, {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ userId }),
   });
   return res.json();
@@ -465,6 +449,12 @@ export async function fetchAutocomplete(q, limit = 8, signal) {
   return res.json();
 }
 
+export async function fetchProductSearchMerged(q, { limit = 20, offset = 0, categoryId, signal } = {}) {
+  const params = new URLSearchParams({ q, limit, offset });
+  if (categoryId) params.set("categoryId", categoryId);
+  const res = await fetch(`${API_BASE}/catalog-search/products-merged?${params}`, { signal });
+  return res.json();
+}
 
 export async function fetchProductDetail(id) {
   const res = await fetch(`${API_BASE}/search/products/${id}`);
@@ -531,6 +521,29 @@ export async function adminUpdateCatalogEntry(token, level, id, payload) {
     method: "PATCH",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
+export async function adminSearchCatalogEverywhere(token, q) {
+  const params = new URLSearchParams({ q });
+  const res = await fetch(`${API_BASE}/admin/catalog/search?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return res.json();
+}
+
+export async function adminListUnmappedCatalog(token, level, q = "") {
+  const params = new URLSearchParams({ level, ...(q ? { q } : {}) });
+  const res = await fetch(`${API_BASE}/admin/catalog/unmapped?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return res.json();
+}
+
+export async function adminGetUnmappedCounts(token) {
+  const res = await fetch(`${API_BASE}/admin/catalog/unmapped/counts`, {
+    headers: { Authorization: `Bearer ${token}` },
   });
   return res.json();
 }
@@ -711,28 +724,24 @@ export async function adminDownloadCatalogTemplate(token, level) {
   return res.blob();
 }
 
-export async function reportGstinConflict(token, gstin, note) {
-  const res = await fetch(`${API_BASE}/auth/gstin-report`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ gstin, note }),
-  });
-  return res.json();
-}
-export async function adminListGstinReports(token, status = "pending") {
-  const res = await fetch(`${API_BASE}/admin/gstin-reports?status=${encodeURIComponent(status)}`, {
+
+export async function adminListBrands(token, q = "") {
+  const params = new URLSearchParams(q ? { q } : {});
+  const res = await fetch(`${API_BASE}/admin/brands?${params}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   return res.json();
 }
-export async function adminResolveGstinReport(token, id, message) {
-  const res = await fetch(`${API_BASE}/admin/gstin-reports/${id}/resolve`, {
-    method: "POST",
+
+export async function adminUpdateBrand(token, brandName, { newName, brandImage, confirmMerge } = {}) {
+  const res = await fetch(`${API_BASE}/admin/brands/${encodeURIComponent(brandName)}`, {
+    method: "PATCH",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ newName, brandImage, confirmMerge }),
   });
   return res.json();
 }
+
 
 export async function adminBulkUploadCatalog(token, level, file, parentId) {
   const form = new FormData();
@@ -838,160 +847,17 @@ export async function fetchCheckoutStatus(token) {
   return res.json();
 }
 export async function fetchOrderQuote(submissionId, quantity, opts = {}) {
-  const { purchaseBasis = "per_pack", orderType = "standard", addressId, destPincode, destState, token } = opts;
+  const { purchaseBasis = "per_pack", orderType = "standard", addressId } = opts;
   const params = new URLSearchParams({
-    submissionId, quantity, purchaseBasis, orderType,
+    submissionId,
+    quantity,
+    purchaseBasis,
+    orderType,
     ...(addressId ? { addressId } : {}),
-    ...(destPincode ? { destPincode } : {}),
-    ...(destState ? { destState } : {}),
   });
-  const res = await fetch(`${API_BASE}/orders/quote?${params}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
+  const res = await fetch(`${API_BASE}/orders/quote?${params}`);
   return res.json();
 }
-
-export async function adminListBrands(token, q = "") {
-  const params = new URLSearchParams(q ? { q } : {});
-  const res = await fetch(`${API_BASE}/admin/brands?${params}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return res.json();
-}
-
-export async function adminUpdateBrand(token, brandName, { newName, brandImage, confirmMerge } = {}) {
-  const res = await fetch(`${API_BASE}/admin/brands/${encodeURIComponent(brandName)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ newName, brandImage, confirmMerge }),
-  });
-  return res.json();
-}
-
-export async function fetchLowestPriceForBrandItem(genericProductBrandId, token) {
-  const res = await fetch(`${API_BASE}/catalog/seller-listing/lowest-price/${genericProductBrandId}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  });
-  return res.json();
-}
-
-export async function fetchBrandsPage({ q = "", limit = 24, offset = 0, signal } = {}) {
-  const params = new URLSearchParams({ q, limit, offset });
-  const res = await fetch(`${API_BASE}/catalog/brands?${params}`, { signal });
-  if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
-  return res.json();
-}
-
-export async function fetchSellersPage({ q = "", limit = 48, offset = 0, signal, token } = {}) {
-  const params = new URLSearchParams({ q, limit, offset });
-  const res = await fetch(`${API_BASE}/catalog/sellers?${params}`, {
-    signal,
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
-  return res.json();
-}
-
-export async function fetchBrandItemsFeed({ categoryId = null, q = "", sort = "relevance", limit = 24, offset = 0, followedOnly = false, shopSlug = null, brands = [], destPincode, destState, signal, token } = {}) {
-  const params = new URLSearchParams({ q, sort, limit, offset });
-  if (categoryId) params.set("categoryId", categoryId);
-  if (followedOnly) params.set("followed", "1");
-  brands.forEach((b) => params.append("brand", b));
-  if (shopSlug) {
-    params.set("shop", shopSlug);
-    if (destPincode) params.set("destPincode", destPincode);
-    if (destState) params.set("destState", destState);
-  }
-  const res = await fetch(`${API_BASE}/catalog/brand-items-feed?${params}`, {
-    signal,
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
-  return res.json();
-}
-
-export async function observePriceTrends(token, obs) {
-  const res = await fetch(`${API_BASE}/catalog/price-trends/observe`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ obs }),
-  });
-  return res.json();
-}
-
-export async function fetchShopInfo(shopSlug, signal) {
-  const res = await fetch(`${API_BASE}/catalog/shops/${encodeURIComponent(shopSlug)}`, { signal });
-  return res.json();
-}
-
-export async function fetchBrandItemSellerOffer(brandItemId, shopSlug, { signal, token } = {}) {
-  const params = new URLSearchParams({ shopSlug });
-  const res = await fetch(`${API_BASE}/catalog/brand-items/${brandItemId}/seller-offer?${params}`, {
-    signal,
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  return res.json();
-}
-
-export async function fetchFollowedIds(token, signal) {
-  const res = await fetch(`${API_BASE}/catalog/followed-ids`, {
-    signal,
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return res.json();
-}
-
-export async function followBrandItem(token, brandItemId) {
-  const res = await fetch(`${API_BASE}/catalog/followed/${brandItemId}`, {
-    method: "PUT",
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return res.json();
-}
-
-export async function unfollowBrandItem(token, brandItemId) {
-  const res = await fetch(`${API_BASE}/catalog/followed/${brandItemId}`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return res.json();
-}
-
-// export async function fetchBrandItemSellers(brandItemId, { sort = "relevance", limit = 24, offset = 0, signal, token } = {}) {
-//   const params = new URLSearchParams({ sort, limit, offset });
-//   const res = await fetch(`${API_BASE}/catalog/brand-items/${brandItemId}/sellers?${params}`, {
-//     signal,
-//     headers: token ? { Authorization: `Bearer ${token}` } : {},
-//   });
-//   if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
-//   return res.json();
-// }
-
-// CHANGED: now forwards destPincode/destState (the buyer's known
-// delivery address) so the backend can sort by 'fastest_delivery' and
-// return each seller's total_delivery_days for display.
-export async function fetchBrandItemSellers(brandItemId, { sort = "relevance", limit = 24, offset = 0, destPincode, destState, signal, token } = {}) {
-  const params = new URLSearchParams({ sort, limit: String(limit), offset: String(offset) });
-  if (destPincode) params.set("destPincode", destPincode);
-  if (destState) params.set("destState", destState);
-
-  const res = await fetch(`${API_BASE}/catalog/brand-items/${brandItemId}/sellers?${params.toString()}`, {
-    signal,
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  });
-  return res.json();
-}
-
-export async function fetchProductSearchMerged(q, { limit = 20, offset = 0, categoryId, signal, token } = {}) {
-  const params = new URLSearchParams({ q, limit, offset });
-  if (categoryId) params.set("categoryId", categoryId);
-  const res = await fetch(`${API_BASE}/catalog-search/products-merged?${params}`, {
-    signal,
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  return res.json();
-}
-
 export async function placeOrder(token, payload) {
   const res = await fetch(`${API_BASE}/orders`, {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(payload),
@@ -1051,21 +917,6 @@ export async function createBuyerAddress(token, payload) {
   });
   return res.json();
 }
-export async function updateBuyerAddress(token, addressId, payload) {
-  const res = await fetch(`${API_BASE}/buyer/addresses/${addressId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify(payload),
-  });
-  return res.json();
-}
-export async function setDefaultBuyerAddress(token, addressId) {
-  const res = await fetch(`${API_BASE}/buyer/addresses/${addressId}/default`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return res.json();
-}
 
 export async function fetchCreditStatus(token, { sellerId, submissionId, otherUserId } = {}) {
   const params = sellerId ? `sellerId=${sellerId}` : submissionId ? `submissionId=${submissionId}` : `otherUserId=${otherUserId}`;
@@ -1121,43 +972,6 @@ export async function toggleCredit(token, buyerId, enabled) {
   return res.json();
 }
 
-export async function searchCreditBuyers(token, q) {
-  const res = await fetch(`${API_BASE}/credit/buyers/search?q=${encodeURIComponent(q)}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  return res.json();
-}
-
-export async function grantCreditToBuyer(token, { buyerId, creditLimit }) {
-  const res = await fetch(`${API_BASE}/credit/grant`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ buyerId, creditLimit }),
-  });
-  return res.json();
-}
-
-// APPEND these three functions to utils/api.js (next to the other credit calls).
-
-export async function fetchCreditSellers(token) {
-  const res = await fetch(`${API_BASE}/credit/sellers`, { headers: { Authorization: `Bearer ${token}` } });
-  return res.json();
-}
-
-export async function fetchCreditIncoming(token) {
-  const res = await fetch(`${API_BASE}/credit/incoming`, { headers: { Authorization: `Bearer ${token}` } });
-  return res.json();
-}
-
-export async function fetchCreditHistory(token, { as, before, limit } = {}) {
-  const p = new URLSearchParams();
-  if (as) p.set("as", as);
-  if (before) p.set("before", before);
-  if (limit) p.set("limit", String(limit));
-  const res = await fetch(`${API_BASE}/credit/history?${p.toString()}`, { headers: { Authorization: `Bearer ${token}` } });
-  return res.json();
-}
-
 export async function fetchOrderById(token, id) {
   const res = await fetch(`${API_BASE}/orders/${id}`, { headers: { Authorization: `Bearer ${token}` } });
   return res.json();
@@ -1188,15 +1002,6 @@ export async function setSellerSubmissionActive(token, id, isActive) {
     method: "PATCH",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify({ isActive }),
-  });
-  return res.json();
-}
-
-export async function refreshSellerSubmission(token, id, validityHours) {
-  const res = await fetch(`${API_BASE}/seller/catalog/submissions/${id}/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify(validityHours != null ? { validityHours } : {}),
   });
   return res.json();
 }
@@ -1276,6 +1081,19 @@ export async function fetchGenericProductBrands(genericProductId, { q = "", sort
   return res.json();
 }
 
+export async function fetchBrandItemsFeed({ categoryId = null, q = "", sort = "relevance", limit = 24, offset = 0, signal } = {}) {
+  const params = new URLSearchParams({ q, sort, limit, offset });
+  if (categoryId) params.set("categoryId", categoryId);
+
+  const res = await fetch(`${API_BASE}/catalog/brand-items-feed?${params}`, { signal });
+
+  if (!res.ok) {
+    throw new Error(`Request failed with status ${res.status}`);
+  }
+
+  return res.json();
+}
+
 export async function fetchBrandItemDetail(brandItemId, { signal } = {}) {
   const res = await fetch(`${API_BASE}/catalog/brand-items/${brandItemId}`, { signal });
 
@@ -1289,6 +1107,38 @@ export async function fetchBrandItemDetail(brandItemId, { signal } = {}) {
   return res.json();
 }
 
+
+export async function reportGstinConflict(token, gstin, note) {
+  const res = await fetch(`${API_BASE}/auth/gstin-report`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ gstin, note }),
+  });
+  return res.json();
+}
+export async function adminListGstinReports(token, status = "pending") {
+  const res = await fetch(`${API_BASE}/admin/gstin-reports?status=${encodeURIComponent(status)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return res.json();
+}
+export async function adminResolveGstinReport(token, id, message) {
+  const res = await fetch(`${API_BASE}/admin/gstin-reports/${id}/resolve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ message }),
+  });
+  return res.json();
+}
+
+export async function fetchBrandItemSellers(brandItemId, { sort = "relevance", limit = 24, offset = 0, signal } = {}) {
+  const params = new URLSearchParams({ sort, limit, offset });
+  // const t0 = performance.now();
+  const res = await fetch(`${API_BASE}/catalog/brand-items/${brandItemId}/sellers?${params}`, { signal });
+  // console.log(`[timing] sellers fetch: ${(performance.now() - t0).toFixed(0)}ms`);
+  if (!res.ok) throw new Error(`Request failed with status ${res.status}`);
+  return res.json();
+}
 
 export async function fetchGenericProductsFeed({ categoryId = null, q = "", sort = "relevance", limit = 24, offset = 0, subcategoryIds, signal } = {}) {
   const params = new URLSearchParams({ q, sort, limit, offset });
@@ -1399,50 +1249,46 @@ export async function adminResolveHelpRequest(token, id, notes) {
   } catch { return { success: false, message: "Network error." }; }
 }
 
-export async function fetchSharedProductLink(submissionId, token) {
-  const res = await fetch(`${API_BASE}/catalog/shared/${submissionId}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+export function fetchSharedProductLink(submissionId) {
+  return fetch(`${API_BASE}/catalog/shared/${submissionId}`).then((r) => r.json());
+}
+
+export async function requestAdminOtp(identifier) {
+  const res = await fetch(`${API_BASE}/admin/auth/request-otp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ identifier }),
   });
   return res.json();
 }
 
-// ---------------------------------------------------------------------
-// Buyer-seller custom pricing (chat-driven, per-buyer price overrides)
-// ---------------------------------------------------------------------
-
-// GET — full picker list: every approved listing for this seller, each
-// merged with its existing override (if any) for this buyer.
-export async function fetchCustomPricing(token, buyerId) {
-  return apiGet(`/seller/custom-pricing/${buyerId}`, token);
-}
-
-// GET — product-centric: every buyer who has a custom price on ONE listing.
-export async function fetchCustomPricingForSubmission(token, submissionId) {
-  return apiGet(`/seller/custom-pricing/by-submission/${submissionId}`, token);
-}
-
-// POST — upsert one or more overrides in a single call.
-// items: [{ submissionId, overrideType: 'percent'|'fixed', value, inputMode?: 'typed_price'|'percent'|'absolute' }]
-export async function saveCustomPricing(token, buyerId, items) {
-  return apiPost(`/seller/custom-pricing/${buyerId}`, token, { items });
-}
-
-// DELETE — clear the override on exactly one listing for this buyer.
-export async function deleteCustomPricing(token, buyerId, submissionId) {
-  return apiDelete(`/seller/custom-pricing/${buyerId}/${submissionId}`, token);
-}
-
-// POST — bulk clear. Omit submissionIds (or pass []) to clear EVERY
-// custom price this seller has set for this buyer.
-export async function bulkClearCustomPricing(token, buyerId, submissionIds) {
-  return apiPost(`/seller/custom-pricing/${buyerId}/bulk-clear`, token, { submissionIds: submissionIds || [] });
-}
-
-export async function fetchOfferForResume(submissionId, token) {
-  const qs = new URLSearchParams({ submissionId });
-  const res = await fetch(`${API_BASE}/orders/offer-for-resume?${qs.toString()}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    credentials: "include",
+export async function verifyAdminOtp(identifier, otp) {
+  const res = await fetch(`${API_BASE}/admin/auth/verify-otp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ identifier, otp }),
   });
-  try { return await res.json(); } catch { return { success: false, message: "Couldn't reach the server." }; }
+  return res.json();
+}
+
+export async function adminCreateAdmin(token, { phone, email, name }) {
+  const res = await fetch(`${API_BASE}/admin/admins/create`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ phone, email, name }),
+  });
+  return res.json();
+}
+
+export async function adminListAdmins(token) {
+  const res = await fetch(`${API_BASE}/admin/admins`, { headers: { Authorization: `Bearer ${token}` } });
+  return res.json();
+}
+
+export async function adminDemoteUser(token, adminId) {
+  const res = await fetch(`${API_BASE}/admin/admins/demote`, {
+    method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ adminId }),
+  });
+  return res.json();
 }
