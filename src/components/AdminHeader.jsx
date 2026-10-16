@@ -14,6 +14,7 @@ import {
     ChevronLeft,
     ChevronRight,
     Menu,
+    TriangleAlert,
     FileText,
     X,
 } from "lucide-react";
@@ -39,6 +40,12 @@ export const ADMIN_NAV_ITEMS = [
         label: "Catalog",
         icon: BookOpen,
         to: "/catalog",
+    },
+    {
+        id: "report",
+        label: "Report",
+        icon: TriangleAlert,
+        to: "/report",
     },
     {
         id: "admins",

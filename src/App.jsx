@@ -23,6 +23,7 @@ import AdminDisputesPage from "./pages/admin/AdminDisputesPage.jsx";
 import AdminDisputeDetailPage from "./pages/admin/AdminDisputeDetailPage.jsx";
 import AdminRfqPage from "./pages/admin/AdminRfqPage.jsx";
 import AdminFinancePage from "./pages/admin/AdminFinancePage.jsx";
+import AdminGstinReportsPage from "./pages/admin/AdminGstinReportsPage.jsx";
 
 function App() {
   return (
@@ -43,6 +44,7 @@ function App() {
               <Route element={<AdminLayout />}>
                 <Route path="/sellers" element={<AdminSellersPage />} />
                 <Route path="/sellers/:id" element={<AdminSellerDetailPage />} />
+                <Route path="/report" element={<AdminGstinReportsPage />} />
                 <Route path="/admins" element={<AdminManageAdminsPage />} />
                 <Route path="/catalog" element={<AdminCatalogReviewPage />} />
                 <Route path="/catalog/:level/:id" element={<AdminCatalogDetailPage />} />
