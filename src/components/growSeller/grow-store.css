@@ -1,0 +1,540 @@
+/* Shop page styles. Scoped to .gsl so nothing leaks outside the GROW seller area. */
+
+/* Entry card on the enquiries page */
+.gsl .st-nav {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    margin: -8px 0 24px;
+    padding: 12px 14px;
+    text-align: left;
+    border-radius: 20px;
+    border: 1px solid var(--line);
+    background: var(--s);
+    color: inherit;
+    font-family: var(--f);
+    cursor: pointer;
+    box-shadow: 0 12px 30px -24px rgba(8, 34, 43, .3);
+    transition: border-color .15s, transform .12s
+}
+
+.gsl .st-nav:hover {
+    border-color: color-mix(in srgb, var(--ink) 25%, var(--line))
+}
+
+.gsl .st-nav:active {
+    transform: scale(.99)
+}
+
+.gsl .st-nav>span:nth-child(2) {
+    flex: 1;
+    min-width: 0
+}
+
+.gsl .st-nav b {
+    display: block;
+    font-weight: 800
+}
+
+.gsl .st-nav small {
+    display: block;
+    color: var(--mute);
+    font-weight: 600;
+    font-size: .84rem
+}
+
+.gsl .st-nav>.ic {
+    color: var(--mute);
+    transform: rotate(-90deg)
+}
+
+@media (min-width: 1100px) {
+    .gsl .st-nav {
+        max-width: 720px
+    }
+}
+
+/* Icon tile (shared by the entry card and section headers) */
+.gsl .st-ico {
+    flex: none;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center
+}
+
+/* Hero */
+.gsl .st-hero {
+    display: flex;
+    gap: 14px;
+    align-items: center
+}
+
+.gsl .st-logo {
+    flex: none;
+    width: 72px;
+    height: 72px;
+    border-radius: 20px;
+    border: 1px solid var(--line);
+    background: #fff;
+    overflow: hidden;
+    display: grid;
+    place-items: center;
+    font: 900 1.7rem var(--f);
+    color: var(--bt)
+}
+
+.gsl .st-logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block
+}
+
+.gsl .st-hero .st-who {
+    flex: 1;
+    min-width: 0
+}
+
+.gsl .st-hero h2 {
+    font: 900 1.3rem/1.15 var(--f);
+    letter-spacing: -.02em;
+    overflow-wrap: anywhere
+}
+
+.gsl .st-hero .stt {
+    margin: 6px 0 0;
+    display: inline-block
+}
+
+.gsl .st-link {
+    margin-top: 14px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: var(--s2);
+    font-weight: 700;
+    font-size: .84rem;
+    color: var(--mute);
+    overflow-wrap: anywhere
+}
+
+.gsl .st-acts {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    flex-wrap: wrap
+}
+
+.gsl .st-acts .bt {
+    flex: 1;
+    min-width: 130px
+}
+
+/* Section header */
+.gsl .st-h {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 4px
+}
+
+.gsl .st-h>div {
+    flex: 1;
+    min-width: 0
+}
+
+.gsl .st-h b {
+    display: block;
+    font: 800 1.05rem/1.2 var(--f)
+}
+
+.gsl .st-h small {
+    display: block;
+    color: var(--mute);
+    font-weight: 600;
+    font-size: .84rem
+}
+
+.gsl .st-pill {
+    flex: none;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--s2);
+    color: var(--mute);
+    font-size: .68rem;
+    font-weight: 900;
+    letter-spacing: .08em;
+    text-transform: uppercase
+}
+
+.gsl .st-tog {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 0;
+    background: none;
+    border: 0;
+    color: inherit;
+    font-family: var(--f);
+    text-align: left;
+    cursor: pointer
+}
+
+.gsl .st-tog>.ic {
+    flex: none;
+    color: var(--mute);
+    transition: transform .2s
+}
+
+.gsl .st-tog[aria-expanded=true]>.ic {
+    transform: rotate(180deg)
+}
+
+/* Read-only rows */
+.gsl .st-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line)
+}
+
+.gsl .st-row:last-child {
+    border-bottom: 0;
+    padding-bottom: 0
+}
+
+.gsl .st-row small {
+    color: var(--mute);
+    font-weight: 700;
+    font-size: .84rem;
+    flex: none
+}
+
+.gsl .st-row b {
+    font-weight: 800;
+    font-size: .92rem;
+    text-align: right;
+    overflow-wrap: anywhere;
+    min-width: 0
+}
+
+/* Fields */
+.gsl .st-two {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px
+}
+
+.gsl .st-two>.f {
+    min-width: 0
+}
+
+.gsl .st-two .inp {
+    min-width: 0;
+    width: 100%
+}
+
+.gsl .st-two .inp input {
+    width: 100%;
+    min-width: 0;
+    text-overflow: ellipsis
+}
+
+.gsl .inp input[type=time] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    display: block;
+    text-align: left
+}
+
+.gsl .inp input[type=time]::-webkit-date-and-time-value {
+    text-align: left;
+    margin: 0
+}
+
+@media (max-width: 340px) {
+    .gsl .st-two {
+        grid-template-columns: minmax(0, 1fr)
+    }
+}
+
+.gsl .inp.ro {
+    opacity: .7
+}
+
+.gsl .inp.ro input {
+    cursor: not-allowed
+}
+
+.gsl .st-cap {
+    margin-top: 6px;
+    font-size: .82rem;
+    font-weight: 600;
+    color: var(--mute)
+}
+
+.gsl .st-cap.ok {
+    color: var(--gt);
+    font-weight: 700
+}
+
+.gsl .st-cap.bad {
+    color: var(--red);
+    font-weight: 700
+}
+
+.gsl .st-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px
+}
+
+.gsl .st-chips button {
+    min-height: 42px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1.5px solid var(--line);
+    background: var(--s);
+    color: var(--ink);
+    font: 700 .9rem var(--f);
+    cursor: pointer;
+    transition: background .15s, color .15s, border-color .15s
+}
+
+.gsl .st-chips button[aria-pressed=true] {
+    background: var(--ink);
+    color: var(--bg);
+    border-color: var(--ink)
+}
+
+/* Logo row */
+.gsl .st-lg {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap
+}
+
+.gsl .st-lg .st-logo {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    font-size: 1.4rem
+}
+
+.gsl .st-lg label.bt {
+    cursor: pointer
+}
+
+.gsl .st-lg label.bt.off {
+    opacity: .5;
+    cursor: not-allowed
+}
+
+/* Logo row */
+.gsl .st-lg {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap
+}
+
+.gsl .st-lg .st-logo {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    font-size: 1.4rem;
+    flex: none
+}
+
+.gsl .st-lg .st-btns {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    min-width: 0
+}
+
+/* The upload button is a <label> inside .f, so ".gsl .f label" caption styles are reset here. */
+.gsl .f label.st-up {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 0;
+    min-height: 44px;
+    padding: 0 18px;
+    border-radius: 999px;
+    border: 1.5px solid color-mix(in srgb, var(--ink) 35%, var(--line));
+    background: var(--s);
+    box-shadow: 0 2px 0 color-mix(in srgb, var(--ink) 12%, transparent);
+    font: 800 .92rem/1 var(--f);
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--ink);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    transition: transform .12s, box-shadow .12s, background .15s, border-color .15s
+}
+
+.gsl .f label.st-up .ic {
+    width: 17px;
+    height: 17px
+}
+
+.gsl .f label.st-up:hover {
+    background: var(--s2);
+    border-color: var(--ink)
+}
+
+.gsl .f label.st-up:active {
+    transform: translateY(1px);
+    box-shadow: none
+}
+
+.gsl .f label.st-up.off {
+    opacity: .5;
+    cursor: not-allowed;
+    box-shadow: none
+}
+
+.gsl .st-rm {
+    min-height: 40px;
+    padding: 0 12px;
+    background: none;
+    border: 0;
+    border-radius: 999px;
+    color: var(--red);
+    font: 800 .88rem var(--f);
+    cursor: pointer
+}
+
+.gsl .st-rm:hover {
+    background: color-mix(in srgb, var(--red) 8%, transparent)
+}
+
+/* Save row */
+.gsl .st-save {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 18px
+}
+
+.gsl .st-err {
+    color: var(--red);
+    font-weight: 700;
+    font-size: .86rem
+}
+
+/* APPEND to grow-store.css (the .gsl stylesheet) — credit block on a customer card */
+.gsl .cr {
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: var(--s2);
+    display: grid;
+    gap: 10px
+}
+
+.gsl .cr-h {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap
+}
+
+.gsl .cr-t {
+    font-size: .76rem;
+    font-weight: 800;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--mute)
+}
+
+.gsl .cr-amt {
+    font: 900 1.2rem var(--f);
+    font-variant-numeric: tabular-nums
+}
+
+.gsl .cr-amt small {
+    font-size: .74rem;
+    font-weight: 700;
+    color: var(--mute);
+    margin-left: 6px
+}
+
+.gsl .cr-bar {
+    height: 8px;
+    border-radius: 999px;
+    background: var(--line);
+    overflow: hidden
+}
+
+.gsl .cr-bar i {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--gr);
+    transition: width .4s
+}
+
+.gsl .cr-bar i.w {
+    background: #F2A600
+}
+
+.gsl .cr-bar i.d {
+    background: var(--red)
+}
+
+.gsl .cr-u {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: .8rem;
+    font-weight: 700;
+    color: var(--mute);
+    font-variant-numeric: tabular-nums
+}
+
+.gsl .cr-f {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap
+}
+
+.gsl .cr-note {
+    font-size: .84rem;
+    font-weight: 600;
+    color: var(--mute)
+}
+
+.gsl .cr-acts {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap
+}
+
+.gsl .cr-acts .bt {
+    flex: 1;
+    min-width: 110px
+}
+
+@media (prefers-reduced-motion:reduce) {
+    .gsl .cr-bar i {
+        transition: none
+    }
+}

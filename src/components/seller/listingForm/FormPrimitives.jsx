@@ -45,8 +45,8 @@ import { uploadSellerFile } from "../../../utils/api.js";
 export const C = {
     ink: "#0B1116",
     muted: "#667077",
-    primary: "#D2462B",
-    secondary: "#006F83",
+    primary: "#000000",
+    secondary: "#000000",
     hair: "rgba(11,17,22,0.09)",
     hairSoft: "rgba(11,17,22,0.05)",
     danger: "#c71f11",
@@ -453,17 +453,14 @@ export function TextFieldWithUnitSelect({
     );
 }
 
-export function TextField2({ label, value, onChange, onBlur, placeholder, inputMode, type = "text", hint, required, disabled, error, dense, halfOnMobile, tinyOnMobile, prefix, onEnterKey }) {
+export function TextField2({ label, value, onChange, onBlur, onFocus, placeholder, inputMode, type = "text", hint, required, disabled, error, dense, halfOnMobile, tinyOnMobile, prefix, onEnterKey, readOnly }) {
     const widthClass = tinyOnMobile ? "w-[4.5rem] sm:w-full" : halfOnMobile ? "w-1/2 sm:w-full" : "w-full";
     return (
         <div className="flex min-w-0 flex-col items-stretch justify-end gap-1 h-full">
             {label && <Label2>{label}</Label2>}
             <div className={`relative flex items-center ${widthClass}`}>
                 {prefix && (
-                    <span
-                        className="pointer-events-none absolute left-2.5 text-[14.5px] font-bold"
-                        style={{ color: C.muted }}
-                    >
+                    <span className="pointer-events-none absolute left-2.5 text-[14.5px] font-bold" style={{ color: C.muted }}>
                         {prefix}
                     </span>
                 )}
@@ -473,10 +470,12 @@ export function TextField2({ label, value, onChange, onBlur, placeholder, inputM
                     inputMode={inputMode}
                     placeholder={placeholder}
                     disabled={disabled}
+                    readOnly={readOnly}
                     onChange={(e) => onChange(e.target.value)}
+                    onFocus={onFocus}
                     onBlur={onBlur}
                     onKeyDown={makeFieldKeyHandler(onEnterKey)}
-                    className={`w-full rounded-lg border tracking-wide bg-white ${dense ? "py-1.5 text-[14.5px]" : "py-2 text-[14.5px]"} font-bold placeholder:font-normal placeholder:text-slate-300 focus:outline-none focus:ring-2 disabled:bg-slate-50 disabled:opacity-60`}
+                    className={`w-full rounded-lg border tracking-wide bg-white ${dense ? "py-1.5 text-[14.5px]" : "py-2 text-[14.5px]"} font-bold placeholder:font-normal placeholder:text-slate-300 focus:outline-none focus:ring-2 disabled:bg-slate-50 disabled:opacity-60 ${readOnly ? "cursor-pointer" : ""}`}
                     style={{
                         color: C.ink,
                         paddingLeft: prefix ? "20px" : (dense ? "10px" : "12px"),
@@ -488,6 +487,7 @@ export function TextField2({ label, value, onChange, onBlur, placeholder, inputM
         </div>
     );
 }
+
 export function TextAreaField({ label, value, onChange, onBlur, placeholder, hint, required, rows = 2, error, onEnterKey }) {
     return (
         <div className="flex flex-col gap-1">
@@ -699,7 +699,7 @@ export function ToggleField({ label, value, onChange, hint, onLabel = "Yes", off
                         type="button"
                         onClick={() => { onChange(v); onEnterKey?.("forward"); }}
                         className="rounded-md px-3 py-0.5 text-[13.5px] tracking-wider font-bold transition-colors duration-150"
-                        style={value === v ? { background: C.secondary, color: "#fff" } : { color: C.muted }}
+                        style={value === v ? { background: "#000000", color: "#fff" } : { color: C.muted }}
                     >
                         {t}
                     </button>
@@ -720,7 +720,7 @@ export function ToggleField3({ label, value, onChange, hint, onLabel = "Yes", of
                         type="button"
                         onClick={() => { onChange(v); onEnterKey?.("forward"); }}
                         className="rounded-md px-3 py-0.5 text-[13.5px] tracking-wider font-bold transition-colors duration-150"
-                        style={value === v ? { background: C.secondary, color: "#fff" } : { color: C.muted }}
+                        style={value === v ? { background: "#000000", color: "#fff" } : { color: C.muted }}
                     >
                         {t}
                     </button>
@@ -903,7 +903,7 @@ export function SectionCard({ icon: Icon, title, subtitle, defaultOpen, headerRi
         >
             <div className="flex w-full items-center gap-2.5 px-3.5 py-3 sm:px-4">
                 <button type="button" onClick={toggle} disabled={alwaysOpen} className="flex min-w-0 flex-1 items-center gap-2.5 text-left disabled:cursor-default">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl" style={{ background: `${C.secondary}14`, color: C.secondary }}>
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl" style={{ background: `#00000014`, color: `#000000` }}>
                         <Icon className="h-4 w-4" />
                     </span>
                     <span className="min-w-0 flex-1">
@@ -987,7 +987,7 @@ export function Progress({ percent }) {
         <div className="h-1.5 w-full overflow-hidden rounded-full" style={{ background: C.hairSoft }}>
             <motion.div
                 className="h-full rounded-full"
-                style={{ background: percent >= 100 ? C.secondary : C.primary }}
+                style={{ background: percent >= 100 ? C.secondary : "#000000" }}
                 initial={false}
                 animate={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
                 transition={{ duration: 0.25, ease: EASE }}
@@ -1017,7 +1017,7 @@ export function ToggleField2({ label, value, onChange, hint, onLabel = "Yes", of
                         type="button"
                         onClick={() => { onChange(v); onEnterKey?.("forward"); }}
                         className="rounded-md px-3 py-0.5 text-[13.5px] tracking-wider font-bold transition-colors duration-150"
-                        style={value === v ? { background: C.secondary, color: "#fff" } : { color: C.muted }}
+                        style={value === v ? { background: "#000000", color: "#fff" } : { color: C.muted }}
                     >
                         {t}
                     </button>
@@ -1353,7 +1353,7 @@ export function CertificateUploadField({ label, hint, rows, onChange, token, add
                     <p className="text-[10.5px] font-medium" style={{ color: C.muted }}>
                         {pending.length > 0
                             ? `Just confirm the name${pending.length === 1 ? "" : "s"} above to add ${pending.length === 1 ? "it" : "them"} — then you can upload more.`
-                            : "Or drag & drop files anywhere in this box."}
+                            : ""}
                     </p>
                 )}
             </div>

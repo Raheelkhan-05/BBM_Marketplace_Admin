@@ -44,7 +44,7 @@
 // bulb also now visibly turns green for the brief window the
 // resolution card is up, instead of going back to its default grey.
 //
-// REPEAT-PRESS MESSAGING (this round)
+// REPEAT-PRESS MESSAGING
 // Previously, tapping the bulb again while a request was already
 // pending/open just re-showed the same static status pill text
 // ("Received — our team will pick this up shortly."), which reads like
@@ -59,6 +59,18 @@
 // after an actual successful submit ("Got it — our team will reach out
 // to you shortly.") is left as-is, since that one *is* describing a
 // fresh submission and shouldn't be confused with the repeat-tap copy.
+//
+// DOCKED-IN-BOTTOM-NAV MODE (this pass)
+// On mobile the bulb no longer floats loose above the left edge of the
+// screen — it now renders as an ordinary item inside BottomNavStrip's
+// horizontally-scrollable row (passed `inline`), sized to match the
+// nav pills and scrolling away with them like any other item. Passing
+// `inline` skips the fixed-position wrapper, the drag-to-pull cord, and
+// disables the drag gesture entirely (a control docked inline in a bar
+// isn't something a user expects to be able to pull) — tapping it still
+// runs the exact same firePull() flow as before. Desktop is completely
+// unchanged: still rendered as its own fixed, floating, draggable
+// element from Layout.jsx.
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence, animate, useMotionValue, useTransform } from "framer-motion";
 import { Lightbulb, X } from "lucide-react";
@@ -67,7 +79,7 @@ import { useHelpRequest } from "../context/HelpRequestContext.jsx";
 const C = {
     ink: "#141B22",
     muted: "#5B6672",
-    primary: "#C2410C",
+    primary: "#000000",
     secondary: "#0B7285",
     hair: "rgba(20,27,34,0.09)",
 };
@@ -118,7 +130,7 @@ function useIsDesktop() {
     return isDesktop;
 }
 
-export default function HelpBulb() {
+export default function HelpBulb({ inline = false }) {
     const { active, stage, loading, trigger, isLoggedIn, resolutionMessage, dismissResolutionMessage } = useHelpRequest();
     const [pulling, setPulling] = useState(false);
     const [pressed, setPressed] = useState(false); // JS-owned press state — see note at top of file
@@ -126,7 +138,12 @@ export default function HelpBulb() {
     const [hint, setHint] = useState(false);
     const [statusVisible, setStatusVisible] = useState(false);
     const reducedMotion = usePrefersReducedMotion();
-    const isDesktop = useIsDesktop();
+    const isDesktopViewport = useIsDesktop();
+    // `inline` mode is always the mobile presentation regardless of the
+    // live viewport check — BottomNavStrip itself is md:hidden, so by
+    // the time this component is asked to render inline we're already
+    // committed to the mobile layout for it.
+    const isDesktop = inline ? false : isDesktopViewport;
     const autoHintTimerRef = useRef(null);
     const statusHideTimerRef = useRef(null);
     const prevStageRef = useRef(stage);
@@ -180,10 +197,11 @@ export default function HelpBulb() {
         return () => clearTimeout(statusHideTimerRef.current);
     }, [stage]);
 
-    // MOBILE: there's no hover-out to close a panel with your thumb, so a
-    // tap anywhere outside the widget dismisses whatever's open — hint,
-    // toast, or status. (The resolution card is deliberately excluded:
-    // that one requires an explicit "Got it" so it can't be missed.)
+    // MOBILE / INLINE: there's no hover-out to close a panel with your
+    // thumb, so a tap anywhere outside the widget dismisses whatever's
+    // open — hint, toast, or status. (The resolution card is deliberately
+    // excluded: that one requires an explicit "Got it" so it can't be
+    // missed.)
     useEffect(() => {
         if (isDesktop) return;
         if (!hint && !toast && !statusVisible) return;
@@ -277,159 +295,98 @@ export default function HelpBulb() {
     // to the pending message if we somehow have no stage but are active.
     const statusPillText = STATUS_MESSAGES[stage] || STATUS_MESSAGES.pending;
 
-    // Desktop: panels grow LEFTWARD from the container's own right edge
-    // (never centered on a point close to the viewport edge). Mobile:
-    // panels grow UPWARD from the button's own left edge.
-    const panelAnchorClass = isDesktop ? "top-full mt-2 right-0" : "bottom-full mb-2 left-0";
-
-    // Fluid sizing: clamp() instead of a hard mobile/desktop jump, so a
-    // 360px phone and an 820px tablet each get a value scaled to their
-    // own width rather than being lumped into one bucket.
-    const panelStyle = isDesktop
-        ? { width: "clamp(200px, 22vw, 260px)", maxWidth: "calc(100vw - 32px)" }
-        : { width: "clamp(220px, 68vw, 300px)", maxWidth: "calc(100vw - 24px)" };
-    const bulbSize = isDesktop ? 40 : "clamp(44px, 11vw, 48px)";
     const focusRing = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2";
 
-    return (
-        <div
-            className={isDesktop ? "fixed z-[85] right-12 -top-1" : "fixed z-[85] left-4"}
-            style={!isDesktop ? { bottom: "calc(4rem + env(safe-area-inset-bottom, 0px))" } : undefined}
-        >
+    /* ---------------------------------------------------------------- */
+    /* INLINE (mobile, docked as a BottomNavStrip row item)              */
+    /* ---------------------------------------------------------------- */
+    if (inline) {
+        return (
             <div
                 ref={rootRef}
-                className="relative flex flex-col items-center"
-                onMouseEnter={() => { if (!active) setHint(true); revealStatus(); }}
-                onMouseLeave={() => setHint(false)}
+                className="relative flex shrink-0 items-center"
+                style={{ height: 36 }} // matches the nav pills' rendered height
             >
-                {isDesktop && (
-                    <>
-                        <div className="h-1.5 w-6 rounded-full" style={{ background: C.hair }} />
-                        <motion.div style={{ width: 2, height: cordHeight, background: "#C7CDD2", borderRadius: 2 }} />
-                    </>
-                )}
-
-                <div
-                    aria-hidden="true"
-                    style={{
-                        position: "absolute",
-                        top: isDesktop ? 20 : "50%",
-                        left: "50%",
-                        transform: isDesktop ? "translateX(-50%)" : "translate(-50%, -50%)",
-                        width: 60, height: 60, borderRadius: "9999px",
-                        background: meta ? `radial-gradient(circle, ${meta.icon}33, transparent 70%)` : "transparent",
-                        opacity: active || resolutionMessage ? 1 : 0,
-                        filter: "blur(6px)",
-                        transition: "opacity 0.35s ease",
-                        pointerEvents: "none",
+                <button
+                    onClick={() => firePull()}
+                    onFocus={(e) => {
+                        // Only show the hint for keyboard focus (Tab), not for the
+                        // synthetic focus a tap/click also triggers on mobile — a real
+                        // tap is already handled by onClick and shouldn't also pop the
+                        // hint bubble on top of it.
+                        if (e.target.matches(":focus-visible")) {
+                            if (!active) setHint(true);
+                            revealStatus();
+                        }
                     }}
-                />
-
-                <motion.div
-                    drag={!active && !reducedMotion}
-                    dragMomentum={false}
-                    dragElastic={0.35}
-                    onDragEnd={handleDragEnd}
+                    onPointerDown={() => setPressed(true)}
+                    onPointerUp={() => setPressed(false)}
+                    onPointerCancel={() => setPressed(false)}
+                    onPointerLeave={() => setPressed(false)}
+                    aria-disabled={active || undefined}
+                    aria-label={active ? `Support has been notified — request ${meta?.label || ""}. Tap to view status.` : "Facing an issue? Tap to notify our support team"}
+                    aria-busy={pulling}
+                    className={`relative flex items-center justify-center rounded-full border shadow-sm ${focusRing}`}
                     style={{
-                        x: dragX, y: dragY,
-                        touchAction: "none", userSelect: "none",
-                        WebkitUserSelect: "none", WebkitTouchCallout: "none", WebkitTapHighlightColor: "transparent",
+                        width: 36,
+                        height: 36,
+                        // Constant, never conditionally toggled — this is what
+                        // makes the background immune to the iOS :active bug.
+                        background: "#ffffff",
+                        borderColor: meta ? meta.border : C.hair,
+                        WebkitTapHighlightColor: "transparent",
+                        transform: pressed && !reducedMotion ? "scale(0.9)" : "scale(1)",
+                        transition: "transform 120ms ease-out, border-color 200ms ease-out",
+                        "--tw-ring-color": meta ? meta.icon : C.secondary,
                     }}
-                    className="relative"
                 >
-                    <button
-                        onClick={() => { firePull(); }}
-                        onFocus={() => { if (!active) setHint(true); revealStatus(); }}
-                        onPointerDown={() => setPressed(true)}
-                        onPointerUp={() => setPressed(false)}
-                        onPointerCancel={() => setPressed(false)}
-                        onPointerLeave={() => setPressed(false)}
-                        aria-disabled={active || undefined}
-                        aria-label={active ? `Support has been notified — request ${meta?.label || ""}. Tap to view status.` : "Facing an issue? Tap or pull to notify our support team"}
-                        aria-busy={pulling}
-                        className={`relative flex items-center justify-center rounded-full border shadow-md md:shadow-sm ${focusRing}`}
+                    {/* Press-feedback overlay — see note at top of file */}
+                    <span
+                        aria-hidden="true"
+                        className="absolute inset-0 rounded-full"
                         style={{
-                            width: bulbSize,
-                            height: bulbSize,
-                            // Constant, never conditionally toggled — this is what
-                            // makes the background immune to the iOS :active bug.
-                            background: "#ffffff",
-                            borderColor: meta ? meta.border : C.hair,
-                            cursor: active ? "pointer" : "grab",
-                            WebkitTapHighlightColor: "transparent",
-                            transform: pressed && !reducedMotion ? "scale(0.9)" : "scale(1)",
-                            transition: "transform 120ms ease-out, border-color 200ms ease-out",
-                            "--tw-ring-color": meta ? meta.icon : C.secondary,
+                            background: "rgba(0,0,0,0.06)",
+                            opacity: pressed ? 1 : 0,
+                            transition: "opacity 120ms ease-out",
+                            pointerEvents: "none",
                         }}
-                    >
-                        {/* Press-feedback overlay: a separate layer whose opacity is
-                            driven by JS `pressed` state, so the base white background
-                            above is never itself the thing that changes. */}
-                        <span
-                            aria-hidden="true"
-                            className="absolute inset-0 rounded-full"
-                            style={{
-                                background: "rgba(0,0,0,0.06)",
-                                opacity: pressed ? 1 : 0,
-                                transition: "opacity 120ms ease-out",
-                                pointerEvents: "none",
-                            }}
-                        />
+                    />
 
-                        {/* Light rays — only drawn when the bulb is "on" (active or
-                            showing the resolved glow), so it reads as switched on and
-                            glowing rather than just a color change. Pauses under
-                            reduced-motion. */}
-                        {meta && (
-                            <svg
-                                aria-hidden="true"
-                                viewBox="0 0 24 24"
-                                className={`pointer-events-none absolute h-[26px] w-[26px] md:h-6 md:w-6 ${reducedMotion ? "" : "animate-pulse"}`}
-                                style={{ top: 6 }}
-                            >
-                                <g stroke={meta.icon} strokeWidth={1.6} strokeLinecap="round" fill="none">
-                                    <line x1="12" y1="0.5" x2="12" y2="2.6" />
-                                    <line x1="5.6" y1="2.6" x2="7" y2="4" />
-                                    <line x1="18.4" y1="2.6" x2="17" y2="4" />
-                                </g>
-                            </svg>
-                        )}
-                        <Lightbulb
-                            className="relative h-[19px] w-[19px] transition-colors duration-300 md:h-[18px] md:w-[18px]"
-                            style={{ color: iconColor, opacity: pulling ? 0.55 : 1 }}
-                            fill="none"
-                            strokeWidth={meta ? 2.4 : 2.1}
+                    {meta && (
+                        <svg
+                            aria-hidden="true"
+                            viewBox="0 0 24 24"
+                            className={`pointer-events-none absolute h-[22px] w-[22px] ${reducedMotion ? "" : "animate-pulse"}`}
+                            style={{ top: 5 }}
+                        >
+                            <g stroke={meta.icon} strokeWidth={1.6} strokeLinecap="round" fill="none">
+                                <line x1="12" y1="0.5" x2="12" y2="2.6" />
+                                <line x1="5.6" y1="2.6" x2="7" y2="4" />
+                                <line x1="18.4" y1="2.6" x2="17" y2="4" />
+                            </g>
+                        </svg>
+                    )}
+                    <Lightbulb
+                        className="relative h-[17px] w-[17px] transition-colors duration-300"
+                        style={{ color: iconColor, opacity: pulling ? 0.55 : 1 }}
+                        fill="none"
+                        strokeWidth={meta ? 2.4 : 2.1}
+                    />
+
+                    {active && (
+                        <span
+                            className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-white"
+                            style={{ background: meta.icon }}
                         />
-                        {!meta && (
-                            <span
-                                role="button"
-                                tabIndex={0}
-                                onClick={(e) => { e.stopPropagation(); showHint(); }}
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); showHint(); }
-                                }}
-                                aria-label="What does this button do?"
-                                className={`absolute -right-1.5 -top-1.5 flex h-4 min-w-[18px] items-center justify-center rounded-full px-1 text-[11px] font-bold text-white ring-2 ring-white ${focusRing}`}
-                                style={{ background: C.primary, "--tw-ring-color": C.primary }}
-                            >
-                                ?
-                            </span>
-                        )}
-                        {active && (
-                            <span
-                                className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-white"
-                                style={{ background: meta.icon }}
-                            />
-                        )}
-                    </button>
-                </motion.div>
+                    )}
+                </button>
 
                 <AnimatePresence>
                     {hint && !messageKind && (
                         <motion.div
-                            {...slide(isDesktop ? -4 : 4)}
-                            className={`absolute ${panelAnchorClass} flex items-center gap-1.5 rounded-lg py-1.5 pl-2.5 pr-1.5 shadow-lg`}
-                            style={{ ...panelStyle, background: C.ink, zIndex: 10 }}
+                            {...slide(4)}
+                            className="absolute bottom-0 mb-2 right-0 flex items-center gap-1.5 rounded-lg py-1.5 pl-2.5 pr-1.5 shadow-lg"
+                            style={{ width: "clamp(220px, 50vw, 300px)", maxWidth: "calc(100vw - 24px)", background: C.ink, zIndex: 10 }}
                         >
                             <span style={{ fontSize: "clamp(11px, 3vw, 12px)", fontWeight: 600, lineHeight: 1.35, letterSpacing: "0.025em", color: "#fff", flex: 1 }}>
                                 Got an issue? Tap the bulb.
@@ -455,11 +412,10 @@ export default function HelpBulb() {
                     {messageKind === "resolution" && (
                         <motion.div
                             key="resolution"
-                            {...slide(isDesktop ? -6 : 6)}
-                            className="absolute left-1/2 -bottom-14 -translate-x-1/2 md:left-auto md:right-0 md:bottom-auto md:top-16 md:translate-x-0 rounded-2xl border p-4 shadow-xl"
+                            {...slide(6)}
+                            className="absolute bottom-full mb-2 right-0 rounded-2xl border p-4 shadow-xl"
                             style={{
-                                ...panelAnchorClass.split(" ").reduce((acc, cls) => acc, {}),
-                                width: isDesktop ? "clamp(220px, 22vw, 280px)" : "clamp(240px, 90vw, 340px)",
+                                width: "clamp(240px, 90vw, 340px)",
                                 maxWidth: "calc(100vw - 24px)",
                                 background: "#fff",
                                 borderColor: `${STATUS_COLORS.resolved.icon}44`,
@@ -495,7 +451,243 @@ export default function HelpBulb() {
                     {messageKind === "toast" && (
                         <motion.div
                             key="toast" role="status" aria-live="polite"
-                            {...slide(isDesktop ? -6 : 6)}
+                            {...slide(6)}
+                            className="absolute bottom-full mb-2 right-0 rounded-xl border px-3 py-2.5 shadow-lg"
+                            style={{ width: "clamp(220px, 68vw, 300px)", maxWidth: "calc(100vw - 24px)", background: toastMeta.bg, borderColor: `${toastMeta.icon}33`, zIndex: 10 }}
+                        >
+                            <p style={{
+                                fontSize: "clamp(12px, 3.2vw, 13px)", fontWeight: 700, lineHeight: 1.4, letterSpacing: "0.025em", margin: 0, textAlign: "center",
+                                color: toastMeta.text,
+                            }}>
+                                {toast.text}
+                            </p>
+                        </motion.div>
+                    )}
+
+                    {messageKind === "status" && (
+                        <motion.div
+                            key="status"
+                            role="status"
+                            aria-live="polite"
+                            {...slide(6)}
+                            className="absolute bottom-full mb-2 right-0 rounded-xl border px-3 py-2 shadow-md"
+                            style={{ width: "clamp(220px, 68vw, 300px)", maxWidth: "calc(100vw - 24px)", background: meta.bg, borderColor: `${meta.icon}44`, zIndex: 10 }}
+                        >
+                            <div className="flex items-start justify-between gap-2">
+                                <p style={{ fontSize: "clamp(11.5px, 3vw, 12px)", fontWeight: 700, lineHeight: 1.35, letterSpacing: "0.025em", color: meta.text, margin: 0 }}>
+                                    {statusPillText}
+                                </p>
+                                <button
+                                    onClick={() => setStatusVisible(false)}
+                                    aria-label="Dismiss"
+                                    className={`shrink-0 rounded-full p-1 -m-1 hover:bg-black/5 active:bg-black/10 ${focusRing}`}
+                                    style={{ "--tw-ring-color": meta.icon }}
+                                >
+                                    <X className="h-3 w-3" style={{ color: meta.text }} />
+                                </button>
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </div>
+        );
+    }
+
+    /* ---------------------------------------------------------------- */
+    /* DESKTOP (floating, fixed, cord + drag-to-pull) — unchanged        */
+    /* ---------------------------------------------------------------- */
+    const panelAnchorClass = "top-full mt-2 right-0";
+    const panelStyle = { width: "clamp(200px, 22vw, 260px)", maxWidth: "calc(100vw - 32px)" };
+    const bulbSize = 40;
+
+    return (
+        <div className="fixed z-[85] right-12 -top-1">
+            <div
+                ref={rootRef}
+                className="relative flex flex-col items-center"
+                onMouseEnter={() => { if (!active) setHint(true); revealStatus(); }}
+                onMouseLeave={() => setHint(false)}
+            >
+                <div className="h-1.5 w-6 rounded-full" style={{ background: C.hair }} />
+                <motion.div style={{ width: 2, height: cordHeight, background: "#C7CDD2", borderRadius: 2 }} />
+
+                <div
+                    aria-hidden="true"
+                    style={{
+                        position: "absolute",
+                        top: 20,
+                        left: "50%",
+                        transform: "translateX(-50%)",
+                        width: 60, height: 60, borderRadius: "9999px",
+                        background: meta ? `radial-gradient(circle, ${meta.icon}33, transparent 70%)` : "transparent",
+                        opacity: active || resolutionMessage ? 1 : 0,
+                        filter: "blur(6px)",
+                        transition: "opacity 0.35s ease",
+                        pointerEvents: "none",
+                    }}
+                />
+
+                <motion.div
+                    drag={!active && !reducedMotion}
+                    dragMomentum={false}
+                    dragElastic={0.35}
+                    onDragEnd={handleDragEnd}
+                    style={{
+                        x: dragX, y: dragY,
+                        touchAction: "none", userSelect: "none",
+                        WebkitUserSelect: "none", WebkitTouchCallout: "none", WebkitTapHighlightColor: "transparent",
+                    }}
+                    className="relative"
+                >
+                    <button
+                        onClick={() => { firePull(); }}
+                        onFocus={() => { if (!active) setHint(true); revealStatus(); }}
+                        onPointerDown={() => setPressed(true)}
+                        onPointerUp={() => setPressed(false)}
+                        onPointerCancel={() => setPressed(false)}
+                        onPointerLeave={() => setPressed(false)}
+                        aria-disabled={active || undefined}
+                        aria-label={active ? `Support has been notified — request ${meta?.label || ""}. Tap to view status.` : "Facing an issue? Tap or pull to notify our support team"}
+                        aria-busy={pulling}
+                        className={`relative flex items-center justify-center rounded-full border shadow-md md:shadow-sm ${focusRing}`}
+                        style={{
+                            width: bulbSize,
+                            height: bulbSize,
+                            background: "#ffffff",
+                            borderColor: meta ? meta.border : C.hair,
+                            cursor: active ? "pointer" : "grab",
+                            WebkitTapHighlightColor: "transparent",
+                            transform: pressed && !reducedMotion ? "scale(0.9)" : "scale(1)",
+                            transition: "transform 120ms ease-out, border-color 200ms ease-out",
+                            "--tw-ring-color": meta ? meta.icon : C.secondary,
+                        }}
+                    >
+                        <span
+                            aria-hidden="true"
+                            className="absolute inset-0 rounded-full"
+                            style={{
+                                background: "rgba(0,0,0,0.06)",
+                                opacity: pressed ? 1 : 0,
+                                transition: "opacity 120ms ease-out",
+                                pointerEvents: "none",
+                            }}
+                        />
+
+                        {meta && (
+                            <svg
+                                aria-hidden="true"
+                                viewBox="0 0 24 24"
+                                className={`pointer-events-none absolute h-6 w-6 ${reducedMotion ? "" : "animate-pulse"}`}
+                                style={{ top: 6 }}
+                            >
+                                <g stroke={meta.icon} strokeWidth={1.6} strokeLinecap="round" fill="none">
+                                    <line x1="12" y1="0.5" x2="12" y2="2.6" />
+                                    <line x1="5.6" y1="2.6" x2="7" y2="4" />
+                                    <line x1="18.4" y1="2.6" x2="17" y2="4" />
+                                </g>
+                            </svg>
+                        )}
+                        <Lightbulb
+                            className="relative h-[18px] w-[18px] transition-colors duration-300"
+                            style={{ color: iconColor, opacity: pulling ? 0.55 : 1 }}
+                            fill="none"
+                            strokeWidth={meta ? 2.4 : 2.1}
+                        />
+                        {!meta && (
+                            <span
+                                role="button"
+                                tabIndex={0}
+                                onClick={(e) => { e.stopPropagation(); showHint(); }}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); showHint(); }
+                                }}
+                                aria-label="What does this button do?"
+                                className={`absolute -right-1.5 -top-1.5 flex h-4 min-w-[18px] items-center justify-center rounded-full px-1 text-[11px] font-bold text-white ring-2 ring-white ${focusRing}`}
+                                style={{ background: C.primary, "--tw-ring-color": C.primary }}
+                            >
+                                ?
+                            </span>
+                        )}
+                        {active && (
+                            <span
+                                className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-white"
+                                style={{ background: meta.icon }}
+                            />
+                        )}
+                    </button>
+                </motion.div>
+
+                <AnimatePresence>
+                    {hint && !messageKind && (
+                        <motion.div
+                            {...slide(-4)}
+                            className={`absolute ${panelAnchorClass} flex items-center gap-1.5 rounded-lg py-1.5 pl-2.5 pr-1.5 shadow-lg`}
+                            style={{ ...panelStyle, background: C.ink, zIndex: 10 }}
+                        >
+                            <span style={{ fontSize: "clamp(11px, 3vw, 12px)", fontWeight: 600, lineHeight: 1.35, letterSpacing: "0.025em", color: "#fff", flex: 1 }}>
+                                Got an issue? Tap the bulb.
+                            </span>
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    clearTimeout(autoHintTimerRef.current);
+                                    setHint(false);
+                                    try { localStorage.setItem(HINT_SEEN_KEY, "1"); } catch { /* ignore */ }
+                                }}
+                                aria-label="Dismiss tip"
+                                className={`shrink-0 rounded-full p-1 -m-1 hover:bg-white/15 ${focusRing}`}
+                                style={{ "--tw-ring-color": "#fff" }}
+                            >
+                                <X className="h-3 w-3" style={{ color: "#fff" }} />
+                            </button>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                <AnimatePresence mode="wait">
+                    {messageKind === "resolution" && (
+                        <motion.div
+                            key="resolution"
+                            {...slide(-6)}
+                            className="absolute right-0 top-16 rounded-2xl border p-4 shadow-xl"
+                            style={{
+                                width: "clamp(220px, 22vw, 280px)",
+                                maxWidth: "calc(100vw - 24px)",
+                                background: "#fff",
+                                borderColor: `${STATUS_COLORS.resolved.icon}44`,
+                                zIndex: 10,
+                            }}
+                        >
+                            <div className="flex items-start justify-between gap-2">
+                                <p style={{ fontSize: "clamp(12.5px, 3vw, 13px)", fontWeight: 800, letterSpacing: "0.025em", color: STATUS_COLORS.resolved.text, margin: 0 }}>
+                                    Request resolved
+                                </p>
+                                <button
+                                    onClick={dismissResolutionMessage}
+                                    aria-label="Dismiss"
+                                    className={`shrink-0 rounded-full p-1 -m-1 hover:bg-black/5 active:bg-black/10 ${focusRing}`}
+                                    style={{ "--tw-ring-color": STATUS_COLORS.resolved.icon }}
+                                >
+                                    <X className="h-3.5 w-3.5" style={{ color: C.muted }} />
+                                </button>
+                            </div>
+                            <p style={{ marginTop: 6, fontSize: "clamp(11.5px, 3vw, 12px)", fontWeight: 500, lineHeight: 1.4, letterSpacing: "0.025em", color: C.ink }}>
+                                {resolutionMessage.notes}
+                            </p>
+                            <button
+                                onClick={dismissResolutionMessage}
+                                className={`mt-3 w-full rounded-lg py-2 text-[12.5px] font-bold text-white ${focusRing}`}
+                                style={{ background: C.secondary, "--tw-ring-color": C.secondary }}
+                            >
+                                Got it
+                            </button>
+                        </motion.div>
+                    )}
+
+                    {messageKind === "toast" && (
+                        <motion.div
+                            key="toast" role="status" aria-live="polite"
+                            {...slide(-6)}
                             className={`absolute ${panelAnchorClass} rounded-xl border px-3 py-2.5 shadow-lg`}
                             style={{ ...panelStyle, background: toastMeta.bg, borderColor: `${toastMeta.icon}33`, zIndex: 10 }}
                         >
@@ -513,7 +705,7 @@ export default function HelpBulb() {
                             key="status"
                             role="status"
                             aria-live="polite"
-                            {...slide(isDesktop ? -6 : 6)}
+                            {...slide(-6)}
                             className={`absolute ${panelAnchorClass} rounded-xl border px-3 py-2 shadow-md`}
                             style={{ ...panelStyle, background: meta.bg, borderColor: `${meta.icon}44`, zIndex: 10 }}
                         >

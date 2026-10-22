@@ -1,30 +1,33 @@
-// src/components/OnboardingGate.jsx
 import { useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 
-// Module-level, not a ref — survives any remount of this component,
-// only resets on an actual full page reload (new JS execution). A
-// component-local ref was getting reset if this component ever
-// remounted, causing the redirect to keep re-firing on every
-// navigation instead of just once per app load.
-let hasChecked = false;
+// Reachable regardless of onboarding status.
+const ALLOWED_PATHS = ["/login", "/terms", "/privacy-policy"];
 
 export default function OnboardingGate() {
-    const { isLoggedIn, profile } = useAuth();
+    const { needsOnboarding, initializing } = useAuth();
+    const { pathname } = useLocation();
     const navigate = useNavigate();
-    const location = useLocation();
 
     useEffect(() => {
-        if (hasChecked) return;
-        if (!isLoggedIn) { hasChecked = true; return; }
-        if (profile === null) return; // still loading — wait for it, don't mark checked yet
+        if (initializing) return;       // profile still loading — don't guess
+        if (!needsOnboarding) return;
 
-        hasChecked = true;
-        if (profile.onboarding_step !== "done" && location.pathname !== "/login") {
-            navigate("/login", { replace: true });
+        // Allow login, legal pages, and the grow/onboarding flow.
+        if (
+            ALLOWED_PATHS.includes(pathname) ||
+            pathname === "/grow" ||
+            pathname.startsWith("/grow/")
+        ) {
+            return;
         }
-    }, [isLoggedIn, profile, location.pathname, navigate]);
+
+        navigate("/login", {
+            replace: true,
+            state: { from: pathname },
+        });
+    }, [needsOnboarding, initializing, pathname, navigate]);
 
     return null;
 }

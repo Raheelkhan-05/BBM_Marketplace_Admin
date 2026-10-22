@@ -1,0 +1,1004 @@
+@import url('https://fonts.googleapis.com/css2?family=Figtree:wght@500;600;700;800;900&display=swap');
+
+/* ===== Same theme variables and background as the Grow seller area (.gsl) ===== */
+.rqp {
+    --bg: #FFFFFF;
+    --s: #FFFFFF;
+    --s2: #EDF3F5;
+    --line: #DCE6E9;
+    --ink: #08222B;
+    --mute: #52686F;
+    --or: #F4511E;
+    --bl: #1E78D6;
+    --gr: #22A06B;
+    --go: #FFD60A;
+    --ot: #C23A0B;
+    --bt: #0F63B5;
+    --gt: #12794A;
+    --yt: #8A6500;
+    --tt: #0D6E7E;
+    --am: #9A6200;
+    --red: #C0341D;
+    --ga: rgba(244, 81, 30, .10);
+    --gb: rgba(30, 120, 214, .12);
+    --f: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+    /* old names, kept so nothing else breaks */
+    --hair: var(--line);
+    --soft: var(--s2);
+    --tl: var(--tt);
+
+    color-scheme: light;
+    position: relative;
+    min-height: 100vh;
+    min-height: 100dvh;
+    font: 500 16px/1.5 var(--f);
+    color: var(--ink);
+    background-color: var(--bg);
+    background-image: radial-gradient(520px 300px at 0 0, var(--ga), transparent 70%), radial-gradient(520px 300px at 100% 0, var(--gb), transparent 70%);
+    background-repeat: no-repeat;
+    -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
+    overflow-x: clip;
+    padding-bottom: 96px
+}
+
+.rqp * {
+    box-sizing: border-box
+}
+
+.rqp a {
+    color: inherit
+}
+
+.rqp h1,
+.rqp h2,
+.rqp p,
+.rqp dl,
+.rqp dd {
+    margin: 0
+}
+
+.rqp button {
+    font-family: var(--f);
+    color: inherit
+}
+
+/* ===== Header (same as the Grow header: translucent, not sticky) ===== */
+.rqp-hd {
+    position: relative;
+    z-index: 40;
+    background: color-mix(in srgb, var(--s) 86%, transparent);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--line);
+    padding-top: env(safe-area-inset-top, 0px)
+}
+
+.rqp-hdi {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px
+}
+
+.rqp-logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    text-decoration: none;
+    color: #08222B
+}
+
+.rqp-logo img {
+    display: block;
+    height: 28px;
+    width: auto;
+    object-fit: contain
+}
+
+.rqp-logo span {
+    font-family: "Bricolage Grotesque", "Figtree", system-ui, sans-serif;
+    font-weight: 800;
+    font-size: 1.125rem;
+    line-height: 1;
+    letter-spacing: .02em;
+    white-space: nowrap
+}
+
+.rqp-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 40px;
+    padding: 0 16px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--s2);
+    color: var(--ink);
+    font: 800 .88rem var(--f);
+    cursor: pointer;
+    transition: transform .12s, opacity .2s
+}
+
+.rqp-pill:active {
+    transform: scale(.98)
+}
+
+/* ===== Layout ===== */
+.rqp-w {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 8px 16px 20px
+}
+
+.rqp-grid {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    margin-top: 14px
+}
+
+@media(min-width:960px) {
+    .rqp-grid {
+        grid-template-columns: minmax(0, 1fr) 340px;
+        gap: 16px
+    }
+
+    .rqp-side {
+        position: sticky;
+        top: 16px
+    }
+}
+
+.rqp-main,
+.rqp-side {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0
+}
+
+/* ===== Title + status ===== */
+.rqp-title {
+    margin-top: 14px
+}
+
+.rqp-title h1 {
+    margin: 10px 0 4px;
+    font: 900 clamp(1.5rem, 5vw, 2.2rem)/1.1 var(--f);
+    letter-spacing: -.03em
+}
+
+.rqp-title p {
+    color: var(--mute);
+    font-size: .92rem;
+    font-weight: 600
+}
+
+.rqp-st {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: .76rem;
+    font-weight: 800;
+    background: var(--s2);
+    color: var(--mute);
+    white-space: nowrap
+}
+
+.rqp-st i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor
+}
+
+.rqp-st.ok {
+    background: color-mix(in srgb, var(--gr) 14%, var(--s));
+    color: var(--gt)
+}
+
+.rqp-st.warn {
+    background: color-mix(in srgb, #F2A600 18%, var(--s));
+    color: var(--am)
+}
+
+.rqp-st.off {
+    background: var(--s2);
+    color: var(--mute)
+}
+
+/* ===== Cards (same as .gsl .card) ===== */
+.rqp-card {
+    background: var(--s);
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    padding: 16px;
+    box-shadow: 0 12px 30px -22px rgba(8, 34, 43, .3);
+    min-width: 0
+}
+
+.rqp-cap {
+    margin: 0 0 8px;
+    margin-bottom: 10px;
+    font-size: .74rem;
+    font-weight: 800;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--mute)
+}
+
+/* ===== Product + requirement ===== */
+.rqp-prod {
+    display: grid;
+    gap: 18px;
+    grid-template-columns: minmax(0, 1fr)
+}
+
+@media(min-width:640px) {
+    .rqp-prod {
+        grid-template-columns: 220px minmax(0, 1fr)
+    }
+}
+
+.rqp-img {
+    aspect-ratio: 1;
+    border-radius: 18px;
+    background: #fff;
+    border: 1px solid var(--line);
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    color: var(--mute)
+}
+
+.rqp-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block
+}
+
+.rqp-thumbs {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    overflow-x: auto;
+    scrollbar-width: none
+}
+
+.rqp-thumbs::-webkit-scrollbar {
+    display: none
+}
+
+.rqp-thumbs button {
+    width: 48px;
+    height: 48px;
+    flex: none;
+    padding: 0;
+    overflow: hidden;
+    cursor: pointer;
+    background: #fff;
+    border-radius: 12px;
+    border: 2px solid var(--line)
+}
+
+.rqp-thumbs button[aria-pressed="true"] {
+    border-color: var(--ink)
+}
+
+.rqp-thumbs img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block
+}
+
+.rqp-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px
+}
+
+.rqp-stats div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    padding: 12px 10px;
+    border-radius: 16px;
+    background: var(--s2)
+}
+
+.rqp-stats b {
+    font: 900 1.3rem/1.1 var(--f);
+    font-variant-numeric: tabular-nums
+}
+
+.rqp-stats span {
+    font-size: .74rem;
+    font-weight: 700;
+    color: var(--mute);
+    line-height: 1.2
+}
+
+.rqp-stats .hl {
+    background: color-mix(in srgb, var(--tt) 10%, var(--s))
+}
+
+.rqp-stats .hl b {
+    color: var(--tt)
+}
+
+.rqp-spec {
+    font-size: .94rem;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere
+}
+
+/* ===== Facts list (same look as the .mt rows on the Grow cards) ===== */
+.rqp-facts {
+    margin: 18px 0 0;
+    padding-top: 6px;
+    border-top: 1px solid var(--line);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr)
+}
+
+@media(min-width:640px) {
+    .rqp-facts {
+        grid-template-columns: 1fr 1fr;
+        column-gap: 24px
+    }
+}
+
+.rqp-facts div {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr);
+    grid-template-areas: "i k" ". v";
+    column-gap: 10px;
+    padding: 11px 0;
+    border-bottom: 1px solid var(--s2)
+}
+
+.rqp-facts svg {
+    grid-area: i;
+    margin-top: 1px;
+    color: var(--mute)
+}
+
+.rqp-facts dt {
+    grid-area: k;
+    font-size: .74rem;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--mute)
+}
+
+.rqp-facts dd {
+    grid-area: v;
+    /* margin: 2px 0 0; */
+    font-size: .94rem;
+    font-weight: 700;
+    overflow-wrap: anywhere
+}
+
+.rqp-alert {
+    margin: 14px 0 0;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--red) 10%, var(--s));
+    color: var(--red);
+    font-size: .88rem;
+    font-weight: 700
+}
+
+.rqp-alert.info {
+    background: var(--s2);
+    color: var(--mute)
+}
+
+/* ===== Section headings ===== */
+.rqp-sh {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 14px
+}
+
+.rqp-sh h2 {
+    font: 800 1.2rem/1.2 var(--f);
+    letter-spacing: -.01em
+}
+
+.rqp-sh p {
+    margin-top: 3px;
+    font-size: .88rem;
+    font-weight: 600;
+    color: var(--mute)
+}
+
+.rqp-seg {
+    display: inline-flex;
+    padding: 4px;
+    gap: 2px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--s2)
+}
+
+.rqp-seg button {
+    min-height: 34px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 999px;
+    background: none;
+    font: 800 .84rem var(--f);
+    color: var(--mute);
+    cursor: pointer
+}
+
+.rqp-seg button[aria-pressed="true"] {
+    background: var(--ink);
+    color: var(--bg)
+}
+
+/* ===== Quote cards ===== */
+.rqp-qs {
+    display: flex;
+    flex-direction: column;
+    gap: 12px
+}
+
+.rqp-q {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    background: var(--s)
+}
+
+.rqp-qh {
+    display: flex;
+    align-items: center;
+    gap: 10px
+}
+
+.rqp-qav {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--bl) 16%, var(--s2));
+    color: var(--bt);
+    font: 900 1.1rem var(--f)
+}
+
+.rqp-qav img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #fff;
+    display: block
+}
+
+.rqp-qwho {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1
+}
+
+.rqp-qwho b {
+    font-size: 1rem;
+    font-weight: 800
+}
+
+.rqp-qwho small {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--mute);
+    font-size: .82rem;
+    font-weight: 600
+}
+
+.rqp-qtags {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: flex-end
+}
+
+.rqp-tag {
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--gr) 16%, var(--s));
+    color: var(--gt);
+    font-size: .72rem;
+    font-weight: 800;
+    white-space: nowrap
+}
+
+.rqp-qm {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap
+}
+
+.rqp-qprod {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1 1 180px
+}
+
+.rqp-qprod b {
+    font-size: .95rem;
+    font-weight: 800
+}
+
+.rqp-qprod small {
+    color: var(--mute);
+    font-size: .82rem;
+    font-weight: 600;
+    line-height: 1.4
+}
+
+.rqp-qprice {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    text-align: right
+}
+
+.rqp-qprice b {
+    font: 900 1.3rem/1.1 var(--f);
+    font-variant-numeric: tabular-nums
+}
+
+.rqp-qprice strong {
+    margin-top: 6px;
+    font: 900 1rem var(--f);
+    color: var(--tt);
+    font-variant-numeric: tabular-nums
+}
+
+.rqp-qprice small {
+    color: var(--mute);
+    font-size: .78rem;
+    font-weight: 600
+}
+
+.rqp-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px
+}
+
+.rqp-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    background: var(--s2);
+    color: var(--ink);
+    font-size: .8rem;
+    font-weight: 700
+}
+
+.rqp-chip.ok {
+    background: color-mix(in srgb, var(--gr) 14%, var(--s));
+    color: var(--gt)
+}
+
+.rqp-bk summary {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    list-style: none;
+    font-size: .86rem;
+    font-weight: 800;
+    color: var(--bt)
+}
+
+.rqp-bk summary::-webkit-details-marker {
+    display: none
+}
+
+.rqp-bk summary svg {
+    transition: transform .2s
+}
+
+.rqp-bk[open] summary svg {
+    transform: rotate(180deg)
+}
+
+.rqp-bk dl,
+.rqp-bkt {
+    margin: 10px 0 0;
+    padding: 12px 14px;
+    border-radius: 16px;
+    background: var(--s2);
+    display: flex;
+    flex-direction: column;
+    gap: 8px
+}
+
+.rqp-bkt {
+    margin-top: 0
+}
+
+.rqp-bk dl div,
+.rqp-bkt div {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: .88rem
+}
+
+.rqp-bk dt,
+.rqp-bkt dt {
+    color: var(--mute);
+    font-weight: 600
+}
+
+.rqp-bk dd,
+.rqp-bkt dd {
+    margin: 0;
+    font-weight: 800;
+    text-align: right;
+    font-variant-numeric: tabular-nums
+}
+
+.rqp-bk .t,
+.rqp-bkt .t {
+    padding-top: 8px;
+    border-top: 1px solid var(--line);
+    font-size: .98rem
+}
+
+.rqp-bk .t dt,
+.rqp-bk .t dd,
+.rqp-bkt .t dt,
+.rqp-bkt .t dd {
+    color: var(--ink);
+    font-weight: 900
+}
+
+.rqp-qf {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap
+}
+
+/* ===== Buttons (pills, same as .gsl .bt) ===== */
+.rqp-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 0 18px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--s2);
+    color: var(--ink);
+    font: 800 .95rem var(--f);
+    white-space: nowrap;
+    text-decoration: none;
+    cursor: pointer;
+    transition: transform .12s, opacity .2s
+}
+
+.rqp-btn:active {
+    transform: scale(.98)
+}
+
+.rqp-btn.go {
+    background: var(--go);
+    border-color: var(--go);
+    color: #06161C
+}
+
+.rqp-btn.blk {
+    width: 100%;
+    min-height: 52px;
+    font-size: 1rem
+}
+
+.rqp-btn:disabled {
+    opacity: .45;
+    cursor: not-allowed
+}
+
+.rqp-note {
+    font-size: .84rem;
+    font-weight: 600;
+    color: var(--mute)
+}
+
+.rqp-none {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    text-align: center;
+    padding: 30px 14px;
+    border: 1.5px dashed var(--line);
+    border-radius: 22px;
+    color: var(--mute);
+    font-size: .92rem
+}
+
+.rqp-none b {
+    color: var(--ink);
+    font-size: 1.02rem
+}
+
+/* ===== Action card ===== */
+.rqp-ac {
+    display: flex;
+    flex-direction: column;
+    gap: 12px
+}
+
+.rqp-ac-n {
+    display: flex;
+    align-items: baseline;
+    gap: 8px
+}
+
+.rqp-ac-n b {
+    font: 900 2rem/1 var(--f);
+    color: var(--tt)
+}
+
+.rqp-ac-n span {
+    color: var(--mute);
+    font-size: .9rem;
+    font-weight: 700
+}
+
+.rqp-done {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 14px;
+    border-radius: 14px;
+    background: var(--s2);
+    color: var(--gt);
+    font-weight: 800;
+    font-size: .92rem
+}
+
+.rqp-why {
+    display: flex;
+    flex-direction: column;
+    gap: 14px
+}
+
+.rqp-why>div {
+    display: flex;
+    gap: 11px
+}
+
+.rqp-why span {
+    flex: none;
+    width: 34px;
+    height: 34px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    background: color-mix(in srgb, var(--bl) 14%, var(--s2));
+    color: var(--bt)
+}
+
+.rqp-why b {
+    display: block;
+    font-size: .95rem;
+    font-weight: 800
+}
+
+.rqp-why small {
+    color: var(--mute);
+    font-size: .84rem;
+    font-weight: 600;
+    line-height: 1.4
+}
+
+/* ===== Error / loading ===== */
+.rqp-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 14px
+}
+
+.rqp-empty {
+    margin-top: 18px;
+    text-align: center;
+    padding: 36px 20px;
+    border: 1.5px dashed var(--line);
+    box-shadow: none
+}
+
+.rqp-empty h2 {
+    margin-bottom: 6px;
+    font: 800 1.2rem var(--f)
+}
+
+.rqp-empty p {
+    color: var(--mute);
+    font-weight: 600
+}
+
+.rqp-empty .rqp-row {
+    justify-content: center
+}
+
+.rqp-skel {
+    margin-top: 18px
+}
+
+.rqp-skel i {
+    display: block;
+    height: 20px;
+    border-radius: 10px;
+    margin-bottom: 14px;
+    background: linear-gradient(90deg, var(--s) 25%, var(--s2) 50%, var(--s) 75%);
+    background-size: 200% 100%;
+    animation: rqp-sh 1.2s linear infinite
+}
+
+.rqp-skel i:first-child {
+    width: 50%;
+    height: 28px
+}
+
+@keyframes rqp-sh {
+    to {
+        background-position: -200% 0
+    }
+}
+
+.rqp-ft {
+    margin-top: 26px;
+    text-align: center;
+    font-size: .82rem;
+    font-weight: 600;
+    color: var(--mute)
+}
+
+/* ===== Mobile bottom bar + toast ===== */
+.rqp-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+    background: color-mix(in srgb, var(--s) 92%, transparent);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-top: 1px solid var(--line)
+}
+
+.rqp-bar .rqp-done {
+    flex: 1
+}
+
+@media(min-width:960px) {
+    .rqp-bar {
+        display: none
+    }
+
+    .rqp {
+        padding-bottom: 24px
+    }
+}
+
+.rqp-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 96px;
+    transform: translate(-50%, 20px);
+    z-index: 120;
+    max-width: 90vw;
+    text-align: center;
+    padding: 12px 18px;
+    border-radius: 999px;
+    background: var(--ink);
+    color: var(--bg);
+    font-weight: 800;
+    font-size: .9rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .3s, transform .3s
+}
+
+.rqp-toast.on {
+    opacity: 1;
+    transform: translate(-50%, 0)
+}
+
+@media(min-width:960px) {
+    .rqp-toast {
+        bottom: 32px
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .rqp-skel i,
+    .rqp-pill,
+    .rqp-btn {
+        animation: none;
+        transition: none
+    }
+}
+
+/* ===== Why sellers join: even spacing, tight title/text gap ===== */
+.rqp-why {
+    gap: 16px
+}
+
+.rqp-why>div {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px
+}
+
+.rqp-why span {
+    flex: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 12px
+}
+
+.rqp-why>div>div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    padding-top: 1px
+}
+
+.rqp-why b {
+    display: block;
+    margin: 0;
+    font-size: .95rem;
+    line-height: 1.25
+}
+
+.rqp-why small {
+    display: block;
+    margin: 0;
+    font-size: .84rem;
+    line-height: 1.35
+}

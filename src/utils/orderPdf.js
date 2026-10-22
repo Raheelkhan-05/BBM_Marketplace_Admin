@@ -3,6 +3,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { transportLabel } from "../../shared/transportOptions.js";
 import { parseDeliveryDate } from "../components/orders/OrderDisplayHelpers.jsx";
+import { computeOrderBreakdown, DEFAULT_GST_PERCENT } from "../../shared/orderPricing.js";
 
 // ---- design tokens — mirrors PurchaseOrderDocument.jsx's `C` object ----
 const INK = [11, 17, 22];        // #0B1116
@@ -12,7 +13,6 @@ const HAIR_SOFT = [232, 234, 235];
 const ACCENT = [11, 114, 133];   // #0B7285
 const PANEL_FILL = [250, 251, 251]; // matches the web card's #fafbfb panels
 
-const GST_PERCENT = 18;
 const RADIUS = 8; // corner radius used for all soft panels, matches rounded-lg/xl in the UI
 
 // ---- Font ----
@@ -153,25 +153,13 @@ function saleUnitLabelFromBasis(basis) {
     if (basis === "per_pack") return "Pack";
     return null;
 }
-function saleQtyOf(item) {
-    return Number(item.pack_quantity_snapshot) || Number(item.quantity) || 0;
-}
+
 function itemQtyText(item) {
     const label = saleUnitLabelFromBasis(item.purchase_basis);
     const saleQty = Number(item.pack_quantity_snapshot) || 0;
     const baseQty = Number(item.quantity) || 0;
     if (label && saleQty > 0) return `${saleQty} ${label}${saleQty === 1 ? "" : "s"} (${baseQty} ${item.unit || ""})`.trim();
     return `${baseQty} ${item.unit || ""}`.trim();
-}
-
-function baseRateInclGst(item) {
-    return Number(item.base_price_applied ?? item.unit_price) || 0;
-}
-function baseRateExclGst(item) {
-    return round2(baseRateInclGst(item) / (1 + GST_PERCENT / 100));
-}
-function amountExclGst(item) {
-    return round2(baseRateExclGst(item) * saleQtyOf(item));
 }
 
 function transportText(order) {
@@ -274,9 +262,26 @@ export async function generateOrderPdf(order, { vendor, logoBase64 } = {}) {
     const isSample = order.order_type === "sample";
     const firstItem = items[0];
 
-    const vendorInfo = order.seller || vendor || null;
+    const { rows: breakdownRows, totals, gstPercent } = computeOrderBreakdown(order);
+
+    // Same merge as PurchaseOrderDocument.jsx — order.seller and the
+    // `vendor` param (passed in as vendorOverride from the seller-view
+    // page) can each carry fields the other lacks.
+    // Same field-by-field merge as PurchaseOrderDocument.jsx — a plain
+    // spread would let `vendor`'s null fields (e.g. seller-view's often-
+    // null city/state) overwrite order.seller's real values.
+    function mergeVendor(base, override) {
+        if (!base && !override) return null;
+        const merged = { ...(base || {}) };
+        for (const [key, value] of Object.entries(override || {})) {
+            if (value != null) merged[key] = value;
+        }
+        return merged;
+    }
+    const vendorInfo = mergeVendor(order.seller, vendor);
     const vendorName = vendorInfo?.display_name || "—";
     const vendorLocation = [vendorInfo?.city, vendorInfo?.state].filter(Boolean).join(", ");
+    const vendorGstin = vendorInfo?.business?.gstin || vendorInfo?.gstin || null;
 
     const buyerShopName = order.buyer_business_name || order.buyer_contact_name || "—";
     const buyerGstin = order.buyer_gstin || "—";
@@ -327,7 +332,7 @@ export async function generateOrderPdf(order, { vendor, logoBase64 } = {}) {
         [
             { label: "Shop Name (Buyer)", value: buyerShopName },
             { label: "Buyer GSTIN", value: buyerGstin },
-            { label: "Buyer Phone", value: order.buyer_contact_phone },
+            { label: "Seller GSTIN", value: vendorGstin || "—" },
         ],
         [
             { label: "Order No.", value: order.order_number },
@@ -411,9 +416,9 @@ export async function generateOrderPdf(order, { vendor, logoBase64 } = {}) {
     // then also got drawn a second time in didDrawCell — invisible to the
     // eye via white-on-white, but very much present twice in the PDF's
     // text layer, which is why copying/selecting text pulled it out twice).
-    const FIXED_COL_WIDTHS = { 0: 30, 2: 114, 3: 82, 4: 88 };
-    const col1Width = contentWidth - FIXED_COL_WIDTHS[0] - FIXED_COL_WIDTHS[2] - FIXED_COL_WIDTHS[3] - FIXED_COL_WIDTHS[4];
-    const col1Pad = 18; // matches the 9pt left/right cellPadding used below
+    const FIXED_COL_WIDTHS = { 0: 26, 2: 88, 3: 70, 4: 66, 5: 82 };
+    const col1Width = contentWidth - FIXED_COL_WIDTHS[0] - FIXED_COL_WIDTHS[2] - FIXED_COL_WIDTHS[3] - FIXED_COL_WIDTHS[4] - FIXED_COL_WIDTHS[5];
+    const col1Pad = 18;
 
     function computeItemBlock(item) {
         doc.setFont(font, "bold");
@@ -431,18 +436,17 @@ export async function generateOrderPdf(order, { vendor, logoBase64 } = {}) {
 
     autoTable(doc, {
         startY: tableStartY,
-        head: [["SR", "DESCRIPTION OF GOODS", "QTY", "BASE PRICE\n(EXCL. GST)", "AMOUNT\n(EXCL. GST)"]],
+        head: [["SR", "DESCRIPTION OF GOODS", "QTY", "RATE\n(EXCL. GST)", "DISCOUNT", "TAXABLE\nVALUE"]],
         body: items.map((it, i) => {
             const { cellHeight } = computeItemBlock(it);
+            const b = breakdownRows[i].breakdown;
             return [
                 i + 1,
-                // FIX: content is now genuinely empty — nothing for autoTable to
-                // add to the PDF's text layer here. Row height is forced via
-                // minCellHeight instead of being inferred from hidden text.
                 { content: "", styles: { minCellHeight: cellHeight } },
                 itemQtyText(it),
-                `Rs. ${inr(baseRateExclGst(it))}`,
-                `Rs. ${inr(amountExclGst(it))}`,
+                `Rs. ${inr(b.rate)}`,
+                b.discountPercent > 0 ? `${b.discountPercent}%\n(- Rs. ${inr(b.discountAmount)})` : "-",
+                `Rs. ${inr(b.taxableValue)}`,
             ];
         }),
         margin: { left: margin, right: margin },
@@ -473,6 +477,7 @@ export async function generateOrderPdf(order, { vendor, logoBase64 } = {}) {
             2: { cellWidth: FIXED_COL_WIDTHS[2] },
             3: { halign: "right", cellWidth: FIXED_COL_WIDTHS[3] },
             4: { halign: "right", cellWidth: FIXED_COL_WIDTHS[4] },
+            5: { halign: "right", cellWidth: FIXED_COL_WIDTHS[5] },
         },
         didParseCell: (data) => {
             if (data.section === "head") {
@@ -524,9 +529,9 @@ export async function generateOrderPdf(order, { vendor, logoBase64 } = {}) {
     y = tableEndY + 14;
 
     // ---- Totals ----
-    const subtotal = round2(items.reduce((s, it) => s + amountExclGst(it), 0));
-    const gstAmount = round2(Math.max(Number(order.total_amount) - subtotal, 0));
+    const { grossAmount, discountAmount, taxableValue, gstAmount, totalPayable } = totals;
     const half = round2(gstAmount / 2);
+    const halfPercent = round2(gstPercent / 2);
 
     const finalY = doc.lastAutoTable.finalY + 20;
     const boxW = 240;
@@ -537,7 +542,8 @@ export async function generateOrderPdf(order, { vendor, logoBase64 } = {}) {
         // boxW
         ``
     );
-    const boxH = (isSample ? 20 : 20 * (1 + gstLines) + 12 + 24) + (noteLines.length * 10);
+    const preDividerRows = isSample ? 0 : 1 /* gross */ + (discountAmount > 0 ? 1 : 0) + 1 /* taxable */ + gstLines;
+    const boxH = isSample ? 20 : preDividerRows * 18 + 12 + 24 + 18 /* Total Payable row */;
 
     let boxTop = finalY;
     if (boxTop + boxH > pageHeight - 70) {
@@ -546,8 +552,6 @@ export async function generateOrderPdf(order, { vendor, logoBase64 } = {}) {
         boxTop = 50;
     }
 
-    // No fill/border panel here anymore — plain rows on the page background,
-    // same as the web card.
     let ty = boxTop + 10;
     function row(label, value, opts = {}) {
         doc.setFont(font, opts.bold ? "bold" : "normal");
@@ -563,21 +567,23 @@ export async function generateOrderPdf(order, { vendor, logoBase64 } = {}) {
     if (isSample) {
         row("Total", `Rs. ${inr(order.total_amount)}`, { bold: true, color: INK, size: 11 });
     } else {
-        row("Subtotal", `Rs. ${inr(subtotal)}`);
-        if (isIntraState) {
-            row(`CGST (${GST_PERCENT / 2}%)`, `Rs. ${inr(half)}`);
-            row(`SGST (${GST_PERCENT / 2}%)`, `Rs. ${inr(round2(gstAmount - half))}`);
-        } else {
-            row(`IGST (${GST_PERCENT}%)`, `Rs. ${inr(gstAmount)}`);
+        row("Gross amount (excl. GST)", `Rs. ${inr(grossAmount)}`);
+        if (discountAmount > 0) row("Discount", `- Rs. ${inr(discountAmount)}`, { color: [5, 150, 105] });
+        if (round2(grossAmount) !== round2(taxableValue)) {
+            row("Taxable value", `Rs. ${inr(taxableValue)}`);
         }
-        // thin divider, then bold Total Payable — matches the web's border-t
+        if (isIntraState) {
+            row(`CGST (${halfPercent}%)`, `Rs. ${inr(half)}`);
+            row(`SGST (${halfPercent}%)`, `Rs. ${inr(round2(gstAmount - half))}`);
+        } else {
+            row(`IGST (${gstPercent}%)`, `Rs. ${inr(gstAmount)}`);
+        }
         doc.setDrawColor(...HAIR);
         doc.setLineWidth(0.75);
         doc.line(boxX, ty - 6, boxX + boxW, ty - 6);
         ty += 14;
-        row("Total Payable", `Rs. ${inr(order.total_amount)}`, { bold: true, color: ACCENT, size: 12 });
+        row("Total Payable", `Rs. ${inr(totalPayable)}`, { bold: true, color: ACCENT, size: 12 });
 
-        // italic footnote, right-aligned under the totals, same as web
         ty += 6;
         doc.setFont(font, "normal");
         doc.setFontSize(7.5);

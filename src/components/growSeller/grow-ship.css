@@ -1,0 +1,236 @@
+/* Ship sheet styles. Scoped to .gsl so nothing leaks outside the GROW seller area. */
+
+.gsl .sx-warn {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    margin-top: 12px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    background: color-mix(in srgb, #F2A600 14%, var(--s));
+    border: 1px solid color-mix(in srgb, #F2A600 45%, var(--line));
+    color: var(--am);
+    font-size: .86rem;
+    font-weight: 700;
+    line-height: 1.4
+}
+
+.gsl .sx-warn .ic {
+    margin-top: 2px
+}
+
+.gsl .sx-tr {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-top: 12px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    background: var(--s2);
+    border: 1px solid var(--line)
+}
+
+.gsl .sx-tr .ic {
+    color: var(--tt);
+    width: 20px;
+    height: 20px
+}
+
+.gsl .sx-tr small {
+    display: block;
+    font-size: .7rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--mute)
+}
+
+.gsl .sx-tr b {
+    display: block;
+    font-weight: 800;
+    overflow-wrap: anywhere
+}
+
+/* Upload cards. They are <label>s inside .f, so every inherited label style from ".gsl .f label" is reset here. */
+.gsl .f .sx-drop {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 12px;
+    margin: 0;
+    padding: 14px;
+    border-radius: 18px;
+    border: 1.5px dashed var(--line);
+    background: var(--s2);
+    font: 500 1rem/1.35 var(--f);
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--ink);
+    cursor: pointer;
+    transition: border-color .15s, background .15s
+}
+
+.gsl .f .sx-drop:hover {
+    border-color: color-mix(in srgb, var(--ink) 30%, var(--line))
+}
+
+.gsl .f .sx-drop.on {
+    border-color: var(--bl);
+    background: color-mix(in srgb, var(--bl) 10%, var(--s))
+}
+
+.gsl .f .sx-drop.has {
+    border-style: solid;
+    border-color: var(--gr);
+    background: color-mix(in srgb, var(--gr) 8%, var(--s))
+}
+
+.gsl .f .sx-drop.off {
+    opacity: .6;
+    cursor: not-allowed
+}
+
+.gsl .sx-di {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    display: grid;
+    place-items: center;
+    background: var(--s);
+    border: 1px solid var(--line);
+    color: var(--mute)
+}
+
+.gsl .sx-di .ic {
+    width: 20px;
+    height: 20px
+}
+
+.gsl .sx-drop.has .sx-di {
+    background: var(--gr);
+    border-color: var(--gr);
+    color: #fff
+}
+
+.gsl .sx-dt {
+    flex: 1;
+    min-width: 0;
+    display: block
+}
+
+.gsl .sx-dt b {
+    display: block;
+    font: 800 .98rem/1.25 var(--f);
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--ink)
+}
+
+.gsl .sx-dt small {
+    display: block;
+    margin-top: 3px;
+    font: 600 .82rem/1.35 var(--f);
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--mute);
+    overflow-wrap: anywhere
+}
+
+.gsl .sx-drop.has .sx-dt small {
+    color: var(--gt);
+    font-weight: 700
+}
+
+.gsl .sx-req {
+    color: var(--or)
+}
+
+.gsl .sx-da {
+    flex: none;
+    display: flex;
+    gap: 6px;
+    align-items: center
+}
+
+.gsl .sx-da span,
+.gsl .sx-da button {
+    min-height: 36px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--s);
+    font: 800 .8rem var(--f);
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--ink);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center
+}
+
+.gsl .sx-drop:not(.has) .sx-da span {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--bg)
+}
+
+.gsl .sx-da .del {
+    color: var(--red)
+}
+
+.gsl .ta {
+    display: block;
+    width: 100%;
+    min-height: 76px;
+    resize: none;
+    padding: 12px 14px;
+    border: 1.5px solid var(--line);
+    border-radius: 14px;
+    background: var(--s2);
+    font: 600 .98rem/1.4 var(--f);
+    color: var(--ink);
+    outline: 0
+}
+
+.gsl .ta:focus {
+    border-color: var(--bl);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--bl) 22%, transparent)
+}
+
+.gsl .ta::placeholder {
+    color: var(--mute);
+    font-weight: 500
+}
+
+.gsl .sx-err {
+    margin-top: 12px;
+    font-size: .88rem;
+    font-weight: 800;
+    color: var(--red)
+}
+
+/* Confirm button stays visible while the form scrolls */
+.gsl .sx-foot {
+    position: sticky;
+    bottom: -23px;
+    z-index: 2;
+    margin-top: 18px;
+    padding: 14px 0 2px;
+    background: linear-gradient(to bottom, transparent, var(--s) 22%)
+}
+
+@media (max-width: 380px) {
+    .gsl .f .sx-drop {
+        flex-wrap: wrap
+    }
+
+    .gsl .sx-dt {
+        flex-basis: calc(100% - 60px)
+    }
+
+    .gsl .sx-da {
+        margin-left: 56px
+    }
+}

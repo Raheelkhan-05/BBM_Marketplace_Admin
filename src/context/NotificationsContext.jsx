@@ -5,10 +5,12 @@
 // tab counts on OrdersPage, and OrderNotificationToast — so there's one
 // fetch + one socket subscription instead of each of those re-doing it.
 //
-// Notifications are split into two buckets by LINK (see
+// Notifications are split into buckets by LINK (see
 // utils/notificationTypes.js for why link and not `type`):
 //   - "order" notifications (purchase + sales) never appear in the bell,
 //     and toast from the center of the screen (OrderNotificationToast).
+//   - credit notifications never appear in the bell; they toast via
+//     CreditNotificationToast (subscribeCredit).
 //   - everything else stays in the bell dropdown and keeps the existing
 //     bell-origin toast (NotificationIsland).
 //
@@ -17,6 +19,9 @@
 // toast/dropdown dispatch are both gated on profile.role === "admin" here
 // — notifications are still fetched/stored/markable for everyone, just
 // not surfaced through the bell's UI for non-admins.
+//
+// TEAM MODE: a team member is signed in as the company, so they share the company's notification
+// list. Two team-only notification types are audience-limited here (see audienceOk).
 import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "./AuthContext.jsx";
 import { useSocket } from "./SocketContext.jsx";
@@ -28,6 +33,7 @@ import {
     isListingApprovedNotification, isListingRejectedNotification,
     isWalletTopupNotification, isWalletLowBalanceNotification,
     extractHighlightId, orderIdFromLink, isTransportProposalNotification,
+    isCreditNotification,
 } from "../utils/notificationTypes.js";
 
 
@@ -39,12 +45,30 @@ export function useNotifications() {
     return ctx;
 }
 
+// TEAM: who a team-only notification is meant for.
+//   team_seller_enabled -> members only ("your team can now sell"); the admin did it, so no extra message.
+//   team_member_joined  -> the admin only.
+function audienceOk(n, teamRole) {
+    if (n?.type === "team_seller_enabled") return teamRole === "member";
+    if (n?.type === "team_member_joined") return teamRole !== "member";
+    return true;
+}
+
 export function NotificationsProvider({ children }) {
     const { token, profile } = useAuth();
     const isAdmin = profile?.role === "admin";
+    const teamRole = profile?.team ? (profile.team.isAdmin ? "admin" : "member") : "solo";
+    const teamRoleRef = useRef(teamRole);
+    teamRoleRef.current = teamRole;
     const { socket } = useSocket();
-    const [notifications, setNotifications] = useState([]);
+    const [allNotifications, setAllNotifications] = useState([]);
     const [loading, setLoading] = useState(true);
+
+    // Everything below this line works off the audience-filtered list.
+    const notifications = useMemo(
+        () => allNotifications.filter((n) => audienceOk(n, teamRole)),
+        [allNotifications, teamRole]
+    );
 
     // Callback registries for "a new notification of this kind just
     // arrived" — NotificationBell subscribes to non-order, and
@@ -53,14 +77,35 @@ export function NotificationsProvider({ children }) {
     const nonOrderListenersRef = useRef(new Set());
     const orderListenersRef = useRef(new Set());
     const chatListenersRef = useRef(new Set());
+    const creditListenersRef = useRef(new Set());
+
+    const announcedRef = useRef(new Set());   // ids already toasted / sounded
+    const firstLoadDoneRef = useRef(false);
+
+    const announceCredit = useCallback((n) => {
+        if (!n?.id || announcedRef.current.has(n.id)) return;
+        announcedRef.current.add(n.id);
+        playNotificationSound();
+        creditListenersRef.current.forEach((cb) => cb(n)); // CreditNotificationToast
+    }, []);
 
     const load = useCallback(async () => {
-        if (!token) { setNotifications([]); setLoading(false); return; }
+        if (!token) { setAllNotifications([]); setLoading(false); firstLoadDoneRef.current = false; return; }
         setLoading(true);
         const res = await fetchNotifications(token);
-        if (res?.success) setNotifications(res.notifications || []);
+        if (res?.success) {
+            const list = res.notifications || [];
+            if (!firstLoadDoneRef.current) {
+                // first load = history, never announce it
+                list.forEach((n) => announcedRef.current.add(n.id));
+                firstLoadDoneRef.current = true;
+            } else {
+                list.filter((n) => isCreditNotification(n) && !n.read).forEach(announceCredit);
+            }
+            setAllNotifications(list);
+        }
         setLoading(false);
-    }, [token]);
+    }, [token, announceCredit]);
 
     useEffect(() => { load(); }, [load]);
 
@@ -68,6 +113,11 @@ export function NotificationsProvider({ children }) {
         if (!socket) return;
         const onNotif = (payload) => {
             if (!payload?.id) return;
+            if (isCreditNotification(payload)) {
+                setAllNotifications((prev) => (prev.some((n) => n.id === payload.id) ? prev : [payload, ...prev]));
+                announceCredit(payload);
+                return;
+            }
             if (isChatNotification(payload)) {
                 chatListenersRef.current.forEach((cb) => cb(payload));
                 return;
@@ -76,24 +126,30 @@ export function NotificationsProvider({ children }) {
             // anywhere, don't toast them, don't store them.
             if (isAutoApprovedListingNotification(payload)) return;
 
-            setNotifications((prev) => (prev.some((n) => n.id === payload.id) ? prev : [payload, ...prev]));
+            setAllNotifications((prev) => (prev.some((n) => n.id === payload.id) ? prev : [payload, ...prev]));
+
+            // Stored (so counts/history stay right if the role changes) but never sounded or toasted
+            // for someone it isn't addressed to.
+            if (!audienceOk(payload, teamRoleRef.current)) return;
 
             const isOrder = isOrderNotification(payload);
-            // Bell notifications (sound + toast/dropdown dispatch) are
-            // admin-only — normal users never hear or see these ring.
-            // Order notifications keep their existing behavior for
-            // everyone (they toast center-screen, not via the bell).
-            if (isOrder || isAdmin) playNotificationSound();
+            const isTransportProposal = isTransportProposalNotification(payload);
+            const routeAsOrder = isOrder || isTransportProposal;
 
-            const targets = isOrder ? orderListenersRef.current : nonOrderListenersRef.current;
+            // Bell notifications (sound + toast/dropdown dispatch) are
+            // admin-only. Order-style notifications toast center-screen for everyone.
+            if (routeAsOrder || isAdmin) playNotificationSound();
+
+            const targets = routeAsOrder ? orderListenersRef.current : nonOrderListenersRef.current;
             // Listings/wallet notifications still get stored (so markRead/history
             // work) but never dispatched to the bell's own toast/dropdown listeners.
-            // Non-order dispatch is further restricted to admins only.
-            if (!isListingsSectionNotification(payload) && (isOrder || isAdmin)) targets.forEach((cb) => cb(payload));
+            if (!isListingsSectionNotification(payload) && (routeAsOrder || isAdmin)) {
+                targets.forEach((cb) => cb(payload));
+            }
         };
         socket.on("notification:new", onNotif);
         return () => socket.off("notification:new", onNotif);
-    }, [socket, isAdmin]);
+    }, [socket, isAdmin, announceCredit]);
 
     const subscribeChat = useCallback((cb) => {
         chatListenersRef.current.add(cb);
@@ -108,14 +164,18 @@ export function NotificationsProvider({ children }) {
         orderListenersRef.current.add(cb);
         return () => orderListenersRef.current.delete(cb);
     }, []);
+    const subscribeCredit = useCallback((cb) => {
+        creditListenersRef.current.add(cb);
+        return () => creditListenersRef.current.delete(cb);
+    }, []);
 
     const markRead = useCallback(async (id) => {
-        setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+        setAllNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
         await apiMarkRead(token, id);
     }, [token]);
 
     const markAllRead = useCallback(async () => {
-        setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+        setAllNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
         await apiMarkAllRead(token);
     }, [token]);
 
@@ -126,17 +186,17 @@ export function NotificationsProvider({ children }) {
     // so this clears all of them at once, not just one.
     const markOrderRead = useCallback(async (orderId, role) => {
         if (!orderId) return;
-        const expectedLink = role === "seller" ? `/seller/orders/${orderId}` : `/orders/${orderId}`;
-        const toMark = notifications.filter((n) => !n.read && n.link === expectedLink);
+        const isMine = role === "seller" ? isSalesOrderNotification : isPurchaseOrderNotification;
+        const matches = (n) => isMine(n) && orderIdFromLink(n.link) === String(orderId);
+        const toMark = notifications.filter((n) => !n.read && matches(n));
         if (toMark.length === 0) return;
-        setNotifications((prev) => prev.map((n) => (n.link === expectedLink ? { ...n, read: true } : n)));
+        setAllNotifications((prev) => prev.map((n) => (matches(n) ? { ...n, read: true } : n)));
         await Promise.all(toMark.map((n) => apiMarkRead(token, n.id)));
     }, [notifications, token]);
 
-    // "message" notifications are already sitting in the DB from before this change
-    // bellNotifications — exclude listings/wallet the same way chat/orders are excluded
+    // bellNotifications — exclude orders/chat/credit/listings/wallet
     const bellNotifications = useMemo(
-        () => notifications.filter((n) => !isOrderNotification(n) && !isChatNotification(n) && !isListingsSectionNotification(n)),
+        () => notifications.filter((n) => !isOrderNotification(n) && !isChatNotification(n) && !isCreditNotification(n) && !isListingsSectionNotification(n)),
         [notifications]
     );
 
@@ -166,7 +226,7 @@ export function NotificationsProvider({ children }) {
         const toMark = notifications.filter((n) => !n.read && (isListingApprovedNotification(n) || isListingRejectedNotification(n)));
         if (!toMark.length) return [];
         const ids = toMark.map((n) => extractHighlightId(n.link)).filter(Boolean);
-        setNotifications((prev) => prev.map((n) => (toMark.includes(n) ? { ...n, read: true } : n)));
+        setAllNotifications((prev) => prev.map((n) => (toMark.includes(n) ? { ...n, read: true } : n)));
         await Promise.all(toMark.map((n) => apiMarkRead(token, n.id)));
         return ids;
     }, [notifications, token]);
@@ -174,7 +234,19 @@ export function NotificationsProvider({ children }) {
     const markWalletTopupViewed = useCallback(async () => {
         const toMark = notifications.filter((n) => !n.read && isWalletTopupNotification(n));
         if (!toMark.length) return;
-        setNotifications((prev) => prev.map((n) => (toMark.includes(n) ? { ...n, read: true } : n)));
+        setAllNotifications((prev) => prev.map((n) => (toMark.includes(n) ? { ...n, read: true } : n)));
+        await Promise.all(toMark.map((n) => apiMarkRead(token, n.id)));
+    }, [notifications, token]);
+
+    const creditUnreadCount = useMemo(
+        () => notifications.filter((n) => isCreditNotification(n) && !n.read).length,
+        [notifications]
+    );
+
+    const markCreditViewed = useCallback(async () => {
+        const toMark = notifications.filter((n) => !n.read && isCreditNotification(n));
+        if (!toMark.length) return;
+        setAllNotifications((prev) => prev.map((n) => (toMark.includes(n) ? { ...n, read: true } : n)));
         await Promise.all(toMark.map((n) => apiMarkRead(token, n.id)));
     }, [notifications, token]);
 
@@ -213,7 +285,6 @@ export function NotificationsProvider({ children }) {
         return map;
     }, [notifications]);
 
-
     const orderUnreadCount = purchaseUnreadCount + salesUnreadCount;
 
     const value = {
@@ -222,7 +293,8 @@ export function NotificationsProvider({ children }) {
         purchaseUnreadCount, salesUnreadCount, orderUnreadCount,
         purchaseOrderUnreadCounts, salesOrderUnreadCounts,
         markRead, markAllRead, markOrderRead,
-        subscribeNonOrder, subscribeOrder, subscribeChat,
+        creditUnreadCount, markCreditViewed,
+        subscribeNonOrder, subscribeOrder, subscribeChat, subscribeCredit,
         listingApprovalUnreadCount, listingRejectionUnreadCount,
         walletTopupUnreadCount, unreadWalletLowBalanceNotifications,
         markListingsViewed, markWalletTopupViewed, transportProposalNotification

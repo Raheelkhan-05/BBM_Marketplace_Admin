@@ -1,0 +1,424 @@
+/* Wallet page styles. Scoped to .gsl so nothing leaks outside the GROW seller area. */
+
+.gsl .wx-hero {
+    border-radius: 24px;
+    padding: 18px 18px 16px;
+    color: #fff;
+    box-shadow: 0 16px 34px -20px rgba(8, 34, 43, .5)
+}
+
+.gsl .wx-lab {
+    font-size: .72rem;
+    font-weight: 800;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    opacity: .9
+}
+
+.gsl .wx-bal {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    margin-top: 6px;
+    font: 900 clamp(2.2rem, 9vw, 2.9rem)/1 var(--f);
+    letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere
+}
+
+.gsl .wx-bal span {
+    font-size: .6em;
+    font-weight: 800
+}
+
+.gsl .wx-sub {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    font-size: .86rem;
+    font-weight: 700;
+    opacity: .92
+}
+
+.gsl .wx-sub .ic {
+    width: 16px;
+    height: 16px
+}
+
+.gsl .wx-blk {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 12px 14px;
+    border-radius: 18px;
+    background: color-mix(in srgb, var(--red) 9%, var(--s));
+    border: 1px solid color-mix(in srgb, var(--red) 40%, var(--line));
+    color: var(--red)
+}
+
+.gsl .wx-blk b {
+    display: block;
+    font-weight: 900
+}
+
+.gsl .wx-blk span {
+    display: block;
+    margin-top: 2px;
+    font-size: .88rem;
+    font-weight: 600;
+    color: var(--mute)
+}
+
+.gsl .wx-blk .ic {
+    margin-top: 2px
+}
+
+.gsl .wx-quick {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px
+}
+
+.gsl .wx-quick button {
+    min-height: 40px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1.5px solid var(--line);
+    background: var(--s2);
+    font: 800 .88rem var(--f);
+    color: var(--ink);
+    cursor: pointer
+}
+
+.gsl .wx-quick button[aria-pressed=true] {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--bg)
+}
+
+.gsl .wx-hint {
+    margin-top: 10px;
+    font-size: .84rem;
+    font-weight: 600;
+    color: var(--mute)
+}
+
+.gsl .wx-err {
+    margin-top: 8px;
+    font-size: .86rem;
+    font-weight: 700;
+    color: var(--red)
+}
+
+.gsl .wx-ok {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 11px 14px;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--gr) 12%, var(--s));
+    color: var(--gt);
+    font-weight: 800;
+    font-size: .9rem
+}
+
+.gsl .wx-pay {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line)
+}
+
+.gsl .wx-pay:last-child {
+    border-bottom: 0;
+    padding-bottom: 0
+}
+
+.gsl .wx-pay:first-child {
+    padding-top: 0
+}
+
+.gsl .wx-pay b {
+    display: block;
+    font: 900 1.1rem var(--f);
+    font-variant-numeric: tabular-nums
+}
+
+.gsl .wx-pay small {
+    display: block;
+    color: var(--mute);
+    font-weight: 600;
+    font-size: .82rem
+}
+
+.gsl .wx-pay .stt {
+    margin-left: 0;
+    text-transform: capitalize
+}
+
+.gsl .wx-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px
+}
+
+.gsl .wx-head .ctl {
+    margin-bottom: 0
+}
+
+.gsl .wx-head small {
+    font-size: .78rem;
+    font-weight: 700;
+    color: var(--mute);
+    text-align: right
+}
+
+.gsl .wx-fil {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    margin-bottom: 4px;
+    scrollbar-width: none
+}
+
+.gsl .wx-fil::-webkit-scrollbar {
+    display: none
+}
+
+.gsl .wx-fil button {
+    flex: none;
+    min-height: 38px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--s);
+    font: 800 .84rem var(--f);
+    color: var(--ink);
+    cursor: pointer
+}
+
+.gsl .wx-fil button[aria-pressed=true] {
+    background: var(--ink);
+    color: var(--bg);
+    border-color: var(--ink)
+}
+
+.gsl .wx-row {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line)
+}
+
+.gsl .wx-row:last-of-type {
+    border-bottom: 0
+}
+
+.gsl .wx-top {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px
+}
+
+.gsl .wx-ic {
+    flex: none;
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center
+}
+
+.gsl .wx-ic.in {
+    background: color-mix(in srgb, var(--gr) 14%, var(--s));
+    color: var(--gt)
+}
+
+.gsl .wx-ic.out {
+    background: color-mix(in srgb, var(--red) 11%, var(--s));
+    color: var(--red)
+}
+
+.gsl .wx-ic.neu {
+    background: var(--s2);
+    color: var(--mute)
+}
+
+.gsl .wx-main {
+    flex: 1;
+    min-width: 0
+}
+
+.gsl .wx-main b {
+    display: block;
+    font-weight: 800;
+    line-height: 1.25;
+    overflow-wrap: anywhere
+}
+
+.gsl .wx-note {
+    margin-top: 2px;
+    font-size: .84rem;
+    font-weight: 600;
+    color: var(--mute);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere
+}
+
+.gsl .wx-date {
+    margin-top: 2px;
+    font-size: .78rem;
+    font-weight: 600;
+    color: var(--mute)
+}
+
+.gsl .wx-acts {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-top: 6px
+}
+
+.gsl .wx-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: none;
+    border: 0;
+    padding: 0;
+    min-height: 28px;
+    font: 800 .82rem var(--f);
+    color: var(--ink);
+    cursor: pointer
+}
+
+.gsl .wx-link.mu {
+    color: var(--mute);
+    text-decoration: underline
+}
+
+.gsl .wx-link .ic {
+    width: 14px;
+    height: 14px;
+    transition: transform .2s
+}
+
+.gsl .wx-link[aria-expanded=true] .ic {
+    transform: rotate(180deg)
+}
+
+.gsl .wx-amt {
+    flex: none;
+    text-align: right
+}
+
+.gsl .wx-amt b {
+    display: block;
+    font: 900 1.05rem var(--f);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap
+}
+
+.gsl .wx-amt b.in {
+    color: var(--gt)
+}
+
+.gsl .wx-amt b.out {
+    color: var(--red)
+}
+
+.gsl .wx-amt small {
+    display: block;
+    margin-top: 2px;
+    font-size: .74rem;
+    font-weight: 700;
+    color: var(--mute);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap
+}
+
+.gsl .wx-bd {
+    margin: 10px 0 0 50px;
+    padding: 12px;
+    border-radius: 16px;
+    background: var(--s2);
+    border: 1px solid var(--line)
+}
+
+.gsl .wx-bd>p {
+    font-size: .8rem;
+    font-weight: 700;
+    color: var(--mute);
+    margin-bottom: 8px;
+    font-variant-numeric: tabular-nums
+}
+
+.gsl .wx-bd div {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 3px 0;
+    font-size: .86rem;
+    font-weight: 600;
+    color: var(--mute)
+}
+
+.gsl .wx-bd div span:first-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap
+}
+
+.gsl .wx-bd div b {
+    color: var(--ink);
+    font-weight: 800;
+    font-variant-numeric: tabular-nums
+}
+
+.gsl .wx-bd div.t {
+    margin-top: 4px;
+    padding-top: 8px;
+    border-top: 1px solid var(--line)
+}
+
+.gsl .wx-bd div.t span:first-child {
+    font-weight: 900;
+    color: var(--ink);
+    text-transform: uppercase;
+    font-size: .78rem;
+    letter-spacing: .06em
+}
+
+.gsl .wx-open {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-top: 4px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+    font-size: .8rem;
+    font-weight: 800;
+    color: var(--mute);
+    text-transform: uppercase;
+    letter-spacing: .06em
+}
+
+.gsl .wx-open b {
+    color: var(--ink);
+    font-size: .95rem;
+    letter-spacing: 0;
+    text-transform: none;
+    font-variant-numeric: tabular-nums
+}
+
+@media (max-width: 380px) {
+    .gsl .wx-bd {
+        margin-left: 0
+    }
+}

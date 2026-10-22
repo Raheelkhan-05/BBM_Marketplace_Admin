@@ -3,15 +3,22 @@
 import { useRef, useState, useEffect, useMemo } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, Loader2, Layers, Tag, Package, BadgeCheck, Lightbulb } from "lucide-react";
+import { Search, Loader2, Layers, Tag, Package, BadgeCheck, X, Lightbulb } from "lucide-react";
 import { fetchAutocomplete } from "../utils/api";
 
 const AUTOCOMPLETE_MIN_CHARS = 2;
 const DEBOUNCE_MS = 100;
 
-const BAR_GRADIENT = "linear-gradient(90deg, #0B8A93 0%, #3B82F6 50%, #FF6A00 100%)";
+const BAR_GRADIENT = "linear-gradient(90deg, #111111 0%, #666666 50%, #111111 100%)";
+// const RUNNING_BORDER_GRADIENT_STOPS =
+//     "#111111 0%, #666666 25%, #111111 50%, #888888 75%, #111111 100%";
+
 const RUNNING_BORDER_GRADIENT_STOPS =
     "#3B82F6 0%, #FF6A00 25%, #3B82F6 50%, #0B8A93 75%, #3B82F6 100%";
+
+// Search submit button colour (Grow palette --blue, with a darker hover/press shade).
+const SEARCH_BTN = "#FFD60A";
+const SEARCH_BTN_HOVER = "#ffd500e7";
 
 const BORDER_WIDTH_PX = 2;
 const SPIN_CYCLE_MS = 2000;
@@ -36,11 +43,11 @@ function buildGlowRings(spreadPx) {
 }
 
 const LEVEL_META = {
-    category: { icon: Layers, label: "Category", color: "#047084", bg: "rgba(4,112,132,0.08)" },
-    subcategory: { icon: Tag, label: "Subcategory", color: "#047084", bg: "rgba(4,112,132,0.08)" },
-    product: { icon: Package, label: "Product", color: "#3B82F6", bg: "rgba(59,130,246,0.08)" },
-    brand: { icon: BadgeCheck, label: "Brand", color: "#F15A24", bg: "rgba(241,90,36,0.08)" },
-    brandFamily: { icon: BadgeCheck, label: "Brand", color: "#F15A24", bg: "rgba(241,90,36,0.08)" },
+    category: { icon: Layers, label: "Category", color: "#111111", bg: "rgba(17,17,17,0.06)" },
+    subcategory: { icon: Tag, label: "Subcategory", color: "#111111", bg: "rgba(17,17,17,0.06)" },
+    product: { icon: Package, label: "Product", color: "#333333", bg: "rgba(51,51,51,0.06)" },
+    brand: { icon: BadgeCheck, label: "Brand", color: "#111111", bg: "rgba(17,17,17,0.06)" },
+    brandFamily: { icon: BadgeCheck, label: "Brand", color: "#111111", bg: "rgba(17,17,17,0.06)" },
 };
 
 function HighlightedName({ name, term }) {
@@ -53,7 +60,7 @@ function HighlightedName({ name, term }) {
     return (
         <>
             {before}
-            <span className="text-slate-900">{match}</span>
+            <span className="text-black">{match}</span>
             {after}
         </>
     );
@@ -71,14 +78,16 @@ export default function MarketplaceSearchBar({
     const navigate = useNavigate();
     const glowRings = useMemo(() => buildGlowRings(glowSpread), [glowSpread]);
 
-    const [suggestionsOn, setSuggestionsOn] = useState(true);
+    const [suggestionsOn, setSuggestionsOn] = useState(false);
     const [suggestions, setSuggestions] = useState([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [suggestionsLoading, setSuggestionsLoading] = useState(false);
     const [highlightIndex, setHighlightIndex] = useState(-1);
+    const [btnHover, setBtnHover] = useState(false);
     const debounceRef = useRef(null);
     const abortRef = useRef(null);
     const containerRef = useRef(null);
+    const inputRef = useRef(null);
 
     // Set right before a suggestion selection changes `value` from the
     // outside. The very next run of the value-watching effect below
@@ -216,8 +225,16 @@ export default function MarketplaceSearchBar({
         }
     };
 
+    const handleClear = () => {
+        onChange("");
+        setSuggestions([]);
+        setShowSuggestions(false);
+        setHighlightIndex(-1);
+        inputRef.current?.focus();
+    };
+
     return (
-        <div className="w-full relative" ref={containerRef}>
+        <div className="w-full relative mt-2 sm:mt-1" ref={containerRef}>
             <style>{`
                 @property --bbm-angle {
                     syntax: '<angle>';
@@ -275,7 +292,7 @@ export default function MarketplaceSearchBar({
                 }
 
                 .bbm-glass-sheen {
-                    background: linear-gradient(to bottom, rgba(255,255,255,.65) 0%, rgba(255,255,255,0) 55%);
+                    background: linear-gradient(to bottom, rgba(255,255,255,.8) 0%, rgba(255,255,255,0) 55%);
                     opacity: .55;
                 }
                 @media (prefers-reduced-motion: reduce) {
@@ -284,7 +301,7 @@ export default function MarketplaceSearchBar({
                 }
             `}</style>
 
-            <div className="relative rounded-full shadow-lg">
+            <div className="relative rounded-full shadow-lg shadow-black/10 md:mt-2">
                 <div
                     aria-hidden="true"
                     className={`bbm-comet-glow-wrap ${glowFading ? "bbm-comet-glow-fade-out" : ""}`}
@@ -322,11 +339,12 @@ export default function MarketplaceSearchBar({
 
                     <div className="relative flex min-w-0 flex-1 items-center">
                         {suggestionsLoading ? (
-                            <Loader2 size={16} className="mr-2 lg:mr-3 shrink-0 animate-spin text-[#0B8A93] lg:!w-4 lg:!h-4" />
+                            <Loader2 size={16} className="mr-2 lg:mr-3 shrink-0 animate-spin text-black lg:!w-4 lg:!h-4" />
                         ) : (
                             <Search size={16} className="mr-2 lg:mr-3 shrink-0 text-slate-400 lg:!w-4 lg:!h-4" />
                         )}
                         <input
+                            ref={inputRef}
                             value={value}
                             onChange={(e) => onChange(e.target.value)}
                             onKeyDown={handleKeyDown}
@@ -335,6 +353,17 @@ export default function MarketplaceSearchBar({
                             autoComplete="off"
                             className="w-full min-w-0 bg-transparent text-[12px] lg:text-[14px] text-slate-700 placeholder:text-slate-400 outline-none tracking-wide"
                         />
+                        {value.length > 0 && (
+                            <button
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={handleClear}
+                                aria-label="Clear search"
+                                className="mx-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition hover:bg-slate-200 hover:text-slate-800"
+                            >
+                                <X size={12} strokeWidth={2.5} />
+                            </button>
+                        )}
                     </div>
 
                     {allowSuggestionsToggle && (
@@ -343,18 +372,25 @@ export default function MarketplaceSearchBar({
                             onClick={() => setSuggestionsOn((v) => !v)}
                             title={suggestionsOn ? "Turn off suggestions" : "Turn on suggestions"}
                             aria-pressed={suggestionsOn}
-                            className={`relative ml-auto flex h-8 w-4 shrink-0 items-center justify-center rounded-full transition ${suggestionsOn ? "text-[#0B8A93]" : "text-slate-300"
+                            className={`relative ml-auto flex h-8 w-4 shrink-0 items-center justify-center rounded-full transition ${suggestionsOn ? "text-black" : "text-slate-300"
                                 }`}
                         >
-                            <Lightbulb size={18} fill={suggestionsOn ? "#0B8A93" : "none"} />
+                            <Lightbulb size={18} fill={suggestionsOn ? "#111111" : "none"} />
                         </button>
                     )}
 
                     <button
                         type="submit"
-                        className="relative ml-2 lg:ml-3 flex h-9 w-9 lg:h-9 lg:w-9 shrink-0 items-center justify-center rounded-full bg-[#F15A24] text-white transition hover:scale-105"
+                        aria-label="Search"
+                        onMouseEnter={() => setBtnHover(true)}
+                        onMouseLeave={() => setBtnHover(false)}
+                        className="relative ml-2 lg:ml-3 flex h-9 w-9 lg:h-9 lg:w-9 shrink-0 items-center justify-center rounded-full text-black transition hover:scale-105 active:scale-95"
+                        style={{
+                            background: btnHover ? SEARCH_BTN_HOVER : SEARCH_BTN,
+                            boxShadow: "0 0 0 2px #FFD60A",
+                        }}
                     >
-                        <Search size={16} className="lg:!w-[16px] lg:!h-[16px]" />
+                        <Search size={16} strokeWidth={2.5} className="lg:!w-[16px] lg:!h-[16px]" />
                     </button>
                 </form>
             </div>
@@ -366,7 +402,7 @@ export default function MarketplaceSearchBar({
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: suggestionsDirection === "up" ? 6 : -6, scale: 0.98 }}
                         transition={{ duration: 0.15 }}
-                        className={`absolute left-0 right-0 z-30 overflow-hidden rounded-2xl border-2 border-[#0B8A93]/15 bg-white shadow-[0_-4px_20px_-6px_rgba(4,112,132,0.35)] ring-1 ring-black/5 ${suggestionsDirection === "up"
+                        className={`absolute left-0 right-0 z-30 overflow-hidden rounded-2xl border-2 border-black/10 bg-white shadow-[0_-4px_20px_-6px_rgba(0,0,0,0.18)] ring-1 ring-black/5 ${suggestionsDirection === "up"
                             ? "bottom-[calc(100%+8px)]"
                             : "top-[calc(100%+8px)]"
                             }`}
@@ -385,7 +421,7 @@ export default function MarketplaceSearchBar({
                                         initial={{ opacity: 0 }}
                                         animate={{ opacity: 1 }}
                                         transition={{ duration: 0.12, delay: i * 0.02 }}
-                                        className={`flex w-full items-center gap-3 border-b border-slate-50 px-4 py-2.5 text-left transition last:border-b-0 ${i === highlightIndex ? "bg-[#F4FBFB]" : "bg-white"
+                                        className={`flex w-full items-center gap-3 border-b border-slate-50 px-4 py-2.5 text-left transition last:border-b-0 ${i === highlightIndex ? "bg-black/[0.04]" : "bg-white"
                                             }`}
                                     >
                                         <span
@@ -399,7 +435,7 @@ export default function MarketplaceSearchBar({
                                                 <HighlightedName name={s.name} term={value} />
                                             </span>
                                             {s.brandName && (
-                                                <span className="mt-0.5 block truncate text-[10.5px] font-bold text-[#F15A24]">
+                                                <span className="mt-0.5 block truncate text-[10.5px] font-bold text-black">
                                                     {s.brandName}
                                                 </span>
                                             )}

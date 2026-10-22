@@ -302,11 +302,12 @@ function OperationsSettingsTab({ token, seller, onSave }) {
       <div>
         <div className="flex items-center justify-between">
           <h3 className="text-[13px] font-bold uppercase tracking-wider text-slate-500">Working days</h3>
-          <div className="flex gap-1.5">
-            <button type="button" onClick={() => update("working_days", [...WEEKDAYS])} className={presetBtnClass(isAllWeek)}>All days</button>
-            <button type="button" onClick={() => update("working_days", weekdaysOnly)} className={presetBtnClass(isWeekdaysOnly)}>Sun off</button>
-            <button type="button" onClick={() => update("working_days", [])} className={presetBtnClass(selected.length === 0)}>Clear</button>
-          </div>
+
+        </div>
+        <div className="flex gap-1.5">
+          <button type="button" onClick={() => update("working_days", [...WEEKDAYS])} className={presetBtnClass(isAllWeek)}>All days</button>
+          <button type="button" onClick={() => update("working_days", weekdaysOnly)} className={presetBtnClass(isWeekdaysOnly)}>Sun off</button>
+          <button type="button" onClick={() => update("working_days", [])} className={presetBtnClass(selected.length === 0)}>Clear</button>
         </div>
         <div className="mt-2 flex flex-wrap gap-1.5">
           {WEEKDAYS.map((d) => {

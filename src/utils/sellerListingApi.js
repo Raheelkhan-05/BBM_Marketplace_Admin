@@ -26,6 +26,43 @@ export async function fetchCommissionInfo() {
     return res.json(); // { success, commissionPercent }
 }
 
+// utils/sellerListingApi.js — additions
+export async function searchEligibleBuyers(token, q, submissionId) {
+    const params = new URLSearchParams({ q });
+    if (submissionId) params.set("submissionId", submissionId);
+    return authedJson(`/seller/catalog/buyers/search?${params}`, token);
+}
+
+export async function fetchListingAccess(token, submissionId) {
+    return authedJson(`/seller/catalog/submissions/${submissionId}/access`, token);
+}
+
+export async function setListingVisibilityMode(token, submissionId, mode) {
+    return authedJson(`/seller/catalog/submissions/${submissionId}/visibility-mode`, token, {
+        method: "PATCH", body: JSON.stringify({ mode }),
+    });
+}
+
+export async function addListingVisibilityBuyer(token, submissionId, buyerId) {
+    return authedJson(`/seller/catalog/submissions/${submissionId}/visibility/buyers`, token, {
+        method: "POST", body: JSON.stringify({ buyerId }),
+    });
+}
+
+export async function removeListingVisibilityBuyer(token, submissionId, buyerId) {
+    return authedJson(`/seller/catalog/submissions/${submissionId}/visibility/buyers/${buyerId}`, token, { method: "DELETE" });
+}
+
+export async function saveCustomPricingForBuyer(token, buyerId, items) {
+    return authedJson(`/seller/custom-pricing/${buyerId}`, token, {
+        method: "POST", body: JSON.stringify({ items }),
+    });
+}
+
+export async function deleteCustomPricingForBuyer(token, buyerId, submissionId) {
+    return authedJson(`/seller/custom-pricing/${buyerId}/${submissionId}`, token, { method: "DELETE" });
+}
+
 export async function fetchSubmissionDetail(token, id) {
     return authedJson(`/seller/catalog/submissions/${id}`, token);
 }
@@ -130,4 +167,35 @@ export async function searchGeoLocationsByType(q, type) {
     const params = new URLSearchParams({ q, ...(type ? { type } : {}) });
     const res = await fetch(`${API_BASE}/geo/search?${params}`);
     return res.json();
+}
+
+// Loads EVERY listing of the seller (the server returns at most 100 per page).
+// Page 1 is reported at once through onFirstPage so the screen fills quickly; the rest load in parallel.
+export async function fetchAllMySubmissions(token, { onFirstPage } = {}) {
+    const PAGE_SIZE = 100, MAX_PAGES = 30;
+    const url = (p) => `/seller/catalog/submissions?page=${p}&pageSize=${PAGE_SIZE}`;
+
+    const first = await authedJson(url(1), token);
+    if (!first?.success) return { success: false, message: first?.message || "Couldn't load listings." };
+
+    const items = [...(first.items || [])];
+    onFirstPage?.(items.slice());
+
+    const totalPages = Math.min(first.pagination?.totalPages || 1, MAX_PAGES);
+    if (totalPages > 1) {
+        const rest = await Promise.all(Array.from({ length: totalPages - 1 }, (_, i) => authedJson(url(i + 2), token)));
+        for (const r of rest) {
+            if (!r?.success) return { success: false, message: r?.message || "Couldn't load listings." };
+            items.push(...(r.items || []));
+        }
+    }
+    // a listing created while we were loading can shift pages: never show the same one twice
+    const seen = new Set();
+    return { success: true, items: items.filter((it) => (seen.has(it.id) ? false : seen.add(it.id))) };
+}
+
+export async function bulkUpdateMarketing(token, { submissionIds, mode, services }) {
+    return authedJson(`/seller/catalog/marketing/bulk`, token, {
+        method: "PATCH", body: JSON.stringify({ submissionIds, mode, services }),
+    });
 }

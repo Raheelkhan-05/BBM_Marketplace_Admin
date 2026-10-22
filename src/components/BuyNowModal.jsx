@@ -1,63 +1,78 @@
-// components/BuyNowModal.jsx — REDESIGNED (UI/UX only, logic untouched)
-
-import { useEffect, useState, useRef, useMemo } from "react";
+// components/BuyNowModal.jsx — SINGLE-PAGE FLOW
+//
+// Top to bottom, in the order a buyer thinks:
+//   1. WHAT am I buying   -> header: tappable product image (lightbox), name, brand, seller, tags
+//   2. RULES              -> quantity card: selected qty, pack info, slabs / discounts
+//   3. WHAT DOES IT COST  -> always-visible price summary (+ pay-on-credit for approved buyers)
+//   4. WHERE / HOW        -> delivery address (shared BuyerAddressContext), transport, estimate
+//   5. DETAILS            -> seller terms + full product details (both closed by default)
+//
+// STICKY FOOTER (thumb zone): quantity stepper + total, MOQ note, credit strip, Add to cart,
+// and ONE primary button:
+//   - no transport preference yet -> "Select transport & Buy now"
+//   - transport already set       -> "Buy now"
+//
+// MOQ NOTE (footer): right under the stepper the buyer is told which MOQ is selected and that
+// the quantity can't go below it for this seller's product (turns red if a typed value is below it).
+//
+// CREDIT (this revision):
+//   - Approved buyers: "Pay on credit" is now PRE-SELECTED. The buyer can still switch to
+//     "Pay now" (that choice is respected and never overridden). Buyers without approved credit
+//     stay on "Pay now".
+//   - Everyone else gets a quick "Ask for credit" button in the footer (not shown for samples):
+//       none / declined (cooldown over) / turned off -> "Ask for credit" button
+//       requested                                    -> "Credit request sent" status
+//       declined (cooldown running)                  -> "ask again after <date>" status
+//   - If a credit order is above the remaining limit, the footer says so and offers
+//     "Pay now instead" / "Ask for higher limit" without scrolling.
+//   - The credit status refreshes live on the socket event `credit:changed`, so the moment the
+//     seller approves, the modal switches to credit by itself (unless the buyer already chose).
+//
+// PAYMENT: a standard order is created in "awaiting_payment", then the buyer is sent to JioPay's
+// hosted checkout (utils/paymentsApi.js). They come back through /payment/return, which shows the
+// verified result. If starting the payment fails (or the buyer comes back with the browser's back
+// button), a "Payment pending" panel lets them retry the SAME order or cancel it to edit.
+import { useEffect, useState, useRef, useMemo, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useLocation } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
-import PaymentQRModal from "./PaymentQRModal.jsx";
+import { motion } from "framer-motion";
+import AddressBook from "./shipping/AddressBook.jsx";
+import ImageLightbox from "./ImageLightbox.jsx";
 import {
-    Loader2, Lock, CheckCircle2, X, Plus, MapPin, ShieldCheck, IndianRupee,
-    Minus, Layers, FileText, Calendar, Beaker, Package, Truck, ReceiptText,
-    CreditCard, Boxes, ShoppingCart, Clock, ChevronDown, PackageCheck, AlertCircle
+    Loader2, Lock, CheckCircle2, X, Plus, MapPin, Minus, Layers, FileText, Calendar, Beaker,
+    Package, Truck, ReceiptText, CreditCard, Boxes, ShoppingCart, ChevronDown, AlertCircle,
+    Share2, Info, Zap, Store, Maximize2, Clock,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext.jsx";
+import { BuyerAddressProvider, useBuyerAddress } from "../context/BuyerAddressContext.jsx";
 import {
-    fetchCheckoutStatus, fetchOrderQuote, fetchBuyerAddresses, createBuyerAddress,
-    placeOrder, cancelMyOrder, fetchCreditStatus, requestCredit as requestCreditApi,
-    fetchBusinessProfile, requestCreditIncrease as requestCreditIncreaseApi, // NEW
+    fetchCheckoutStatus, fetchOrderQuote,
+    placeOrder, cancelMyOrder, fetchCreditStatus,
+    requestCredit as requestCreditApi,
+    requestCreditIncrease as requestCreditIncreaseApi, fetchBrandItemDetail, fetchOrderConstraints,
+    fetchOrderById,
 } from "../utils/api.js";
 import { addToCart } from "../utils/cartApi.js";
-import { TRANSPORT_OPTIONS } from "../../shared/transportOptions.js";
-import { saveOrderFormSession, loadOrderFormSession, clearOrderFormSession } from "../utils/orderFormSession.js";
-import { clearPaymentSession } from "../utils/paymentSession.js";
-import { C, EASE, Label, TextField, ChipToggleGroup, SectionCard } from "./seller/listingForm/FormPrimitives.jsx";
+import { startOrderPayment, redirectToGateway } from "../utils/paymentsApi.js";
+import { C, EASE, Label, ChipToggleGroup } from "./seller/listingForm/FormPrimitives.jsx";
 import { purchaseQtyToSaleUnitQty, saleUnitQtyToBaseUnits, hasOuterPack, saleUnitLabel, round2 } from "../shared/packUnits.js";
 import { checkOrderWindow, checkLocationServiceable } from "../shared/orderConstraints.js";
-import { fetchOrderConstraints } from "../utils/api.js";
-import { usePincodeResolution } from "../hooks/usePincodeResolution.js";
 import TransportPreferenceModal from "./transport/TransportPreferenceModal.jsx";
-import { Share2 } from "lucide-react";
 import { shareProductLink } from "../utils/share.js";
 import { routeTransportModeLabel, getRouteTransportFields } from "../../shared/routeTransportFields.js";
-import { fetchBuyerTransportPreference, fetchSellerRouteOptions } from "../utils/api.transport.js";
+import { fetchBuyerTransportPreference } from "../utils/api.transport.js";
+import { resizedImageUrl } from "../utils/imageUrl";
+import { useOrderResume } from "../context/OrderResumeContext.jsx";
+import { useSocket } from "../context/SocketContext.jsx";
 
 /* ============================================================
-   All logic below (constants, pure functions, computeLocalQuote,
-   normalizeQuote, etc.) is IDENTICAL to the original file —
-   copy verbatim, no changes.
+   Pure logic — unchanged
    ============================================================ */
-
-const EMPTY_ADDRESS = { label: "Office", contact_name: "", contact_phone: "", address_line1: "", address_line2: "", city: "", state: "", pincode: "" };
-
-function seedFromBusinessProfile(bp, phone) {
-    if (!bp) return null;
-    const useDispatch = bp.dispatch_same_as_registered === false && bp.dispatch_address;
-    return {
-        label: "Deliver To: ",
-        contact_name: bp.legal_name || bp.trade_name || "",
-        contact_phone: phone || "",
-        address_line1: useDispatch ? bp.dispatch_address : (bp.registered_address || ""),
-        address_line2: "",
-        city: bp.district || "",
-        state: useDispatch ? (bp.dispatch_state || bp.state || "") : (bp.state || ""),
-        pincode: useDispatch ? (bp.dispatch_pincode || bp.pincode || "") : (bp.pincode || ""),
-    };
-}
 
 const BASIS_OPTIONS = [
     { value: "per_pack", label: "Packs" },
     { value: "per_master_pack", label: "Master packs" },
 ];
-const VISIBLE_BASIS_OPTIONS = BASIS_OPTIONS;
 
 function getVisibleBasisOptions(seller) {
     const hasMasterPack = Number(seller?.masterPackSize) >= 1;
@@ -116,7 +131,7 @@ function formatMoqForBasis(moqSaleUnits, seller) {
     return `${n} ${label}${n === 1 ? "" : "s"}`;
 }
 
-function computeLocalQuote(seller, quantity, basis, isSample, buyerPincode, buyerState) {
+function computeLocalQuote(seller, quantity, basis, isSample) {
     const qty = Number(quantity);
     if (!seller || !(qty > 0)) return null;
 
@@ -145,7 +160,8 @@ function computeLocalQuote(seller, quantity, basis, isSample, buyerPincode, buye
     const moq = Number(seller.moq) || 0;
     const availableStock = seller.availableStock != null ? Number(seller.availableStock) : null;
     const stockShortfall = seller.stockType !== "made_to_order" && availableStock != null && saleQty > availableStock;
-    const outOfStock = seller.stockType !== "made_to_order" && availableStock != null && availableStock <= 0;
+    const outOfStock = seller.stockType !== "made_to_order" && availableStock != null
+        && (moq > 0 ? availableStock < moq : availableStock <= 0);
 
     const grossSubtotal = round2(slabPrice * saleQty);
     const subtotal = round2(unitPrice * saleQty);
@@ -156,7 +172,7 @@ function computeLocalQuote(seller, quantity, basis, isSample, buyerPincode, buye
         unitPrice, basePriceApplied: slabPrice, appliedSlab, discountPercent, discountTier,
         grossSubtotal, discountAmount, subtotal, moq,
         meetsMoq: moq ? saleQty >= moq : true,
-        availableStock, stockShortfall, estimatedDeliveryDate: null, isEstimate: true,
+        availableStock, stockShortfall, outOfStock, estimatedDeliveryDate: null, isEstimate: true,
     };
 }
 
@@ -199,67 +215,55 @@ function normalizeQuote(raw) {
     return { ...raw, ...acceptanceFields, saleUnitQuantity, grossSubtotal, discountAmount, discountPercent };
 }
 
+function pick(obj, ...keys) {
+    for (const k of keys) {
+        const v = obj?.[k];
+        if (v !== undefined && v !== null && v !== "") return v;
+    }
+    return null;
+}
+const isHiddenLabel = (name) => typeof name === "string" && name.trim().toLowerCase() === "pending";
+
 /* ============================================================
-   REDESIGNED presentational primitives
+   Presentational primitives
    ============================================================ */
 
-// Slightly larger tap targets, clearer pressed/disabled states, no
-// harsh 90° corners on the stepper buttons so it reads as one control.
-function Stepper({ value, onChange, min = 1, max }) {
+function Stepper({ value, onChange, min = 1, max, compact = false }) {
     const atMax = max != null && Number(value) >= Number(max);
     const atMin = Number(value) <= Number(min);
+    const h = compact ? "h-9" : "h-11";
+    const w = compact ? "w-9" : "w-11";
     return (
-        <div className="flex items-center overflow-hidden rounded-xl border" style={{ borderColor: C.hair }}>
-            <button type="button" disabled={atMin} onClick={() => onChange(Math.max(min, Number(value) - 1))}
-                className="flex h-11 w-11 shrink-0 items-center justify-center transition-colors duration-150 hover:bg-black/[0.03] disabled:opacity-30 disabled:hover:bg-transparent">
+        <div className="flex items-center overflow-hidden rounded-xl border bg-white" style={{ borderColor: C.hair }}>
+            <button type="button" aria-label="Decrease quantity" disabled={atMin} onClick={() => onChange(Math.max(min, Number(value) - 1))}
+                className={`flex ${h} ${w} shrink-0 items-center justify-center transition-colors duration-150 active:bg-black/[0.06] hover:bg-black/[0.03] disabled:opacity-30 disabled:hover:bg-transparent`}>
                 <Minus className="h-4 w-4" style={{ color: C.ink }} />
             </button>
-            <div className="h-11 w-px" style={{ background: C.hair }} />
-            <input type="text" inputMode="decimal" value={value}
-                onChange={(e) => onChange(e.target.value.replace(/[^\d.]/g, ""))}
-                className="h-11 w-full min-w-0 flex-1 bg-transparent text-center text-[16px] font-extrabold tabular-nums tracking-wide focus:outline-none"
+            <div className={`${h} w-px`} style={{ background: C.hair }} />
+            <input type="text" inputMode="numeric" value={value} aria-label="Quantity"
+                onChange={(e) => onChange(e.target.value.replace(/\D/g, ""))}
+                className={`${h} w-full min-w-0 flex-1 bg-transparent text-center text-[15px] font-extrabold tabular-nums focus:outline-none`}
                 style={{ color: C.ink }} />
-            <div className="h-11 w-px" style={{ background: C.hair }} />
-            <button type="button" disabled={atMax} onClick={() => onChange(Number(value) + 1)}
-                className="flex h-11 w-11 shrink-0 items-center justify-center transition-colors duration-150 hover:bg-black/[0.03] disabled:opacity-30 disabled:hover:bg-transparent">
+            <div className={`${h} w-px`} style={{ background: C.hair }} />
+            <button type="button" aria-label="Increase quantity" disabled={atMax} onClick={() => onChange(Number(value) + 1)}
+                className={`flex ${h} ${w} shrink-0 items-center justify-center transition-colors duration-150 active:bg-black/[0.06] hover:bg-black/[0.03] disabled:opacity-30 disabled:hover:bg-transparent`}>
                 <Plus className="h-4 w-4" style={{ color: C.ink }} />
             </button>
         </div>
     );
 }
 
-// Consistent icon + tone so warnings/errors/info are visually
-// distinguishable at a glance, not just by background tint.
 function Notice({ tone = "warn", children }) {
     const tones = {
-        warn: { background: "#FEF6E7", color: "#92600A", icon: AlertCircle },
-        danger: { background: "#FDECEC", color: "#B3261E", icon: AlertCircle },
-        info: { background: `${C.secondary}0f`, color: C.secondary, icon: AlertCircle },
+        warn: { background: "#FEF6E7", color: "#92600A" },
+        danger: { background: "#FDECEC", color: "#B3261E" },
+        info: { background: `${C.secondary}0f`, color: C.secondary },
     };
     const t = tones[tone] || tones.warn;
-    const Icon = t.icon;
     return (
         <div className="flex items-start gap-2 rounded-xl px-2.5 py-2" style={{ background: t.background }}>
-            <Icon className="mt-[1px] h-4 w-4 shrink-0" style={{ color: t.color }} />
+            <AlertCircle className="mt-[1px] h-4 w-4 shrink-0" style={{ color: t.color }} />
             <p className="text-[12.5px] font-semibold leading-snug tracking-wide" style={{ color: t.color }}>{children}</p>
-        </div>
-    );
-}
-
-function ConstraintNotice({ reasons }) {
-    const active = reasons.filter(Boolean);
-    if (!active.length) return null;
-    return (
-        <div className="flex items-start gap-2.5 rounded-xl px-3.5 py-3" style={{ background: "#FDECEC" }}>
-            <AlertCircle className="mt-[1px] h-4 w-4 shrink-0" style={{ color: "#B3261E" }} />
-            <div className="min-w-0">
-                <p className="text-[12.5px] font-bold" style={{ color: "#B3261E" }}>Can't place an order right now</p>
-                <div className="mt-1 flex flex-col gap-0.5">
-                    {active.map((r, i) => (
-                        <span key={i} className="text-[12px] font-medium leading-snug" style={{ color: "#B3261E" }}>{r.message}</span>
-                    ))}
-                </div>
-            </div>
         </div>
     );
 }
@@ -268,33 +272,83 @@ function SkeletonBar({ width = "70%" }) {
     return <span className="inline-block h-3.5 animate-pulse rounded" style={{ width, background: C.hairSoft }} />;
 }
 
-function QuoteRow({ label, value, tone, strong, small }) {
+function QuoteRow({ label, value, tone, small }) {
     return (
         <div className="flex items-center justify-between gap-3">
             <span className={`font-medium tracking-wide ${small ? "text-[12.5px]" : "text-[13.5px]"}`} style={{ color: tone || C.muted }}>{label}</span>
-            <span className={`shrink-0 tabular-nums font-bold tracking-wide ${strong ? "text-[17px]" : "text-[13.5px]"}`} style={{ color: tone || C.ink }}>{value}</span>
+            <span className={`shrink-0 tabular-nums font-bold tracking-wide ${small ? "text-[12.5px]" : "text-[13.5px]"}`} style={{ color: tone || C.ink }}>{value}</span>
         </div>
     );
 }
 
-// A single, reusable card shell replacing SectionCard's repeated
-// icon+eyebrow+border pattern — quieter borders, one consistent radius,
-// and a plain sentence-case title instead of a tracked-out label.
-function Panel({ icon: Icon, title, subtitle, children }) {
+function Card({ icon: Icon, title, right, children }) {
     return (
-        <div className="rounded-2xl border bg-white p-4 sm:p-4.5" style={{ borderColor: C.hairSoft }}>
-            <div className="mb-3 flex items-center gap-2">
-                {Icon && (
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" style={{ background: `${C.secondary}12` }}>
-                        <Icon className="h-3.5 w-3.5" style={{ color: C.secondary }} />
-                    </span>
-                )}
-                <div className="min-w-0">
-                    <h3 className="text-[14px] font-bold tracking-wide" style={{ color: C.ink }}>{title}</h3>
-                    {subtitle && <p className="text-[11.5px] font-medium tracking-wide" style={{ color: C.muted }}>{subtitle}</p>}
-                </div>
+        <section className="rounded-2xl border bg-white p-3.5 sm:p-4" style={{ borderColor: C.hair }}>
+            <div className="mb-3 flex items-center justify-between gap-2">
+                <p className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-[0.08em]" style={{ color: C.muted }}>
+                    {Icon && <Icon className="h-3.5 w-3.5" />} {title}
+                </p>
+                {right}
             </div>
             <div className="flex flex-col gap-3">{children}</div>
+        </section>
+    );
+}
+
+function Collapse({ icon: Icon, title, hint, defaultOpen = false, children }) {
+    return (
+        <details open={defaultOpen} className="group rounded-2xl border bg-white p-3.5 sm:p-4" style={{ borderColor: C.hair }}>
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-1.5">
+                    {Icon && <Icon className="h-3.5 w-3.5 shrink-0" style={{ color: C.muted }} />}
+                    <span className="text-[11px] font-extrabold uppercase tracking-[0.08em]" style={{ color: C.muted }}>{title}</span>
+                    {hint && <span className="truncate text-[11px] font-medium tracking-wide" style={{ color: C.muted }}>· {hint}</span>}
+                </span>
+                <ChevronDown className="h-4 w-4 shrink-0 transition-transform duration-200 group-open:rotate-180" style={{ color: C.muted }} />
+            </summary>
+            <div className="mt-3 border-t pt-3" style={{ borderColor: C.hairSoft }}>{children}</div>
+        </details>
+    );
+}
+
+function Fact({ label, value }) {
+    if (value === null || value === undefined || value === "") return null;
+    return (
+        <div className="flex items-baseline justify-between gap-3 border-b py-2 text-[12.5px] last:border-b-0" style={{ borderColor: C.hairSoft }}>
+            <span className="shrink-0 font-semibold tracking-wide" style={{ color: C.muted }}>{label}</span>
+            <span className="text-right font-bold tracking-wide" style={{ color: C.ink }}>{String(value)}</span>
+        </div>
+    );
+}
+
+function Pill({ icon: Icon, tone = "neutral", children }) {
+    const tones = {
+        neutral: { background: C.hairSoft, color: C.muted },
+        teal: { background: "#006F8314", color: "#006F83" },
+        warn: { background: "#f59e0b1a", color: "#b45309" },
+        purple: { background: "#7c3aed14", color: "#7c3aed" },
+    };
+    const t = tones[tone] || tones.neutral;
+    return (
+        <span className="inline-flex items-center gap-1 rounded-full px-2 py-[3px] text-[10.5px] font-bold tracking-wide whitespace-nowrap" style={t}>
+            {Icon && <Icon className="h-2.5 w-2.5" strokeWidth={2.5} />} {children}
+        </span>
+    );
+}
+
+function TransportFields({ mode, fields }) {
+    const rows = getRouteTransportFields(mode)
+        .map((f) => ({ f, val: fields?.[f.key] }))
+        .filter((x) => x.val);
+    if (!rows.length) return null;
+    return (
+        <div className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
+            {rows.map(({ f, val }) => (
+                <div key={f.key} className="flex items-baseline gap-1.5">
+                    <span className="shrink-0 text-[11px] font-semibold tracking-wide" style={{ color: C.muted }}>{f.label.replace(/\s*\(if any\)\s*/i, "")}:</span>
+                    <span className="truncate text-[12.5px] font-bold tracking-wide" style={{ color: C.ink }}>{val}</span>
+                </div>
+            ))}
         </div>
     );
 }
@@ -303,23 +357,50 @@ function Panel({ icon: Icon, title, subtitle, children }) {
    Main component
    ============================================================ */
 
-export default function BuyNowModal({ seller, product, onClose }) {
-    const { token } = useAuth();
+function BuyNowModalInner({ seller, product, onClose, resumeIntent: resumeIntentProp, deferPriceUntilConfirmed = false }) {
+    const { token, profile } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
+    const { reportApproved, reportRejected, registerActive, unregisterActive } = useOrderResume();
+    const { socket } = useSocket();
+    const { addresses, selectedAddress, loading: addressLoading, selectAddress } = useBuyerAddress();
 
-    /* ---- ALL STATE, EFFECTS, AND HANDLERS BELOW ARE UNCHANGED FROM
-       THE ORIGINAL FILE — copy verbatim. Only the JSX return differs. ---- */
+    const [access, setAccess] = useState(() =>
+        profile && (profile.email_verified || profile.phone_verified)
+            ? { canCheckout: true, profile }
+            : undefined
+    );
 
-    const [access, setAccess] = useState(undefined);
-    const [addresses, setAddresses] = useState([]);
-    const [selectedAddressId, setSelectedAddressId] = useState(null);
-    const [showNewAddress, setShowNewAddress] = useState(false);
-    const [newAddress, setNewAddress] = useState(EMPTY_ADDRESS);
-    const [awaitingPaymentOrderId, setAwaitingPaymentOrderId] = useState(null);
-    const [orderMode, setOrderMode] = useState("standard");
+    // ---- Delivery address (shared context; already loaded on Home) ----
+    const addressBookRef = useRef(null);
+    const selectedAddressId = selectedAddress?.id || null;
+    const effectivePincode = selectedAddress?.pincode || "";
+    const effectiveState = selectedAddress?.state || "";
+    const effectiveCity = selectedAddress?.city || "";
+
+    const restoreAddressIdRef = useRef(null);
+    useEffect(() => {
+        if (!restoreAddressIdRef.current || !addresses.length) return;
+        const target = addresses.find((a) => a.id === restoreAddressIdRef.current);
+        restoreAddressIdRef.current = null;
+        if (target) selectAddress(target);
+    }, [addresses, selectAddress]);
+
+    // ---- Payment hand-off state ----
+    // pendingPay: an order that exists in "awaiting_payment" and still needs paying.
+    // redirecting: we've just sent the buyer to JioPay's page.
+    const [pendingPay, setPendingPay] = useState(null); // { orderId, orderNumber }
+    const [redirecting, setRedirecting] = useState(false);
+    const [orderMode, setOrderMode] = useState("standard"); // standard | sample | credit
     const isSample = orderMode === "sample";
     const isCredit = orderMode === "credit";
+
+    // What the buyer explicitly picked between "Pay now" and "Pay on credit":
+    //   null       = never chosen -> follow the default (credit when approved, otherwise pay now)
+    //   "standard" = chose Pay now      "credit" = chose Pay on credit
+    // A resumed order also counts as a choice. This is what stops the credit default from
+    // overriding the buyer's own decision.
+    const payModeChoiceRef = useRef(null);
 
     const defaultBasis = useMemo(
         () => (Number(seller?.masterPackSize) >= 1 ? "per_master_pack" : "per_pack"),
@@ -328,68 +409,61 @@ export default function BuyNowModal({ seller, product, onClose }) {
 
     const [basis, setBasis] = useState(defaultBasis);
     const minQuantity = useMemo(() => computeMinQuantity(seller, basis), [seller, basis]);
-    const visibleBasisOptions = useMemo(() => getVisibleBasisOptions(seller), [seller?.masterPackSize]);
+    const visibleBasisOptions = useMemo(() => getVisibleBasisOptions(seller), [seller?.masterPackSize]); // eslint-disable-line react-hooks/exhaustive-deps
     const [quantity, setQuantity] = useState(() => computeMinQuantity(seller, defaultBasis));
     const userPickedBasis = useRef(false);
     const belowMoq = !isSample && Number(quantity) < minQuantity;
 
     const [transportPreference, setTransportPreference] = useState(seller?.transportPreference ?? null);
-    const [pendingTransportProposal, setPendingTransportProposal] = useState(seller?.transportPendingProposal ?? null); // was already declared — now actually seeded
+    const [pendingTransportProposal, setPendingTransportProposal] = useState(seller?.transportPendingProposal ?? null);
+    const transportPrefRef = useRef(transportPreference);
+    transportPrefRef.current = transportPreference;
 
     useEffect(() => {
         setTransportPreference(seller?.transportPreference ?? null);
-        setPendingTransportProposal(seller?.transportPendingProposal ?? null); // NEW
+        setPendingTransportProposal(seller?.transportPendingProposal ?? null);
     }, [seller?.transportPreference, seller?.transportPendingProposal]);
 
+    useEffect(() => { if (!userPickedBasis.current) setBasis(defaultBasis); }, [defaultBasis]);
     useEffect(() => {
-        if (!userPickedBasis.current) setBasis(defaultBasis);
-    }, [defaultBasis]);
-
-    useEffect(() => {
-        if (basis === "per_master_pack" && !(Number(seller?.masterPackSize) >= 1)) {
-            setBasis("per_pack");
-        }
+        if (basis === "per_master_pack" && !(Number(seller?.masterPackSize) >= 1)) setBasis("per_pack");
     }, [basis, seller?.masterPackSize]);
-
     useEffect(() => {
-        if (basis === "per_pack" && Number(seller?.masterPackSize) >= 1) {
-            setBasis("per_master_pack");
-        }
+        if (basis === "per_pack" && Number(seller?.masterPackSize) >= 1) setBasis("per_master_pack");
     }, [basis, seller?.masterPackSize]);
-
     useEffect(() => {
         if (isSample) return;
         setQuantity((q) => (Number(q) < minQuantity ? minQuantity : q));
     }, [minQuantity, isSample]);
 
     const [notes, setNotes] = useState("");
-    const selectedAddress = addresses.find((a) => a.id === selectedAddressId);
     const [quote, setQuote] = useState(null);
 
     const maxQuantity = !isSample && seller?.stockType === "ready_stock"
         ? (quote?.availableStock ?? seller?.availableStock ?? null)
         : null;
-
     const exceedsStock = !isSample && maxQuantity != null && Number(quantity) > Number(maxQuantity);
-    const outOfStock = !isSample && (quote?.outOfStock || (maxQuantity != null && Number(maxQuantity) <= 0));
+    const outOfStock = !isSample && (
+        quote?.outOfStock || (maxQuantity != null && maxQuantity < minQuantity)
+    );
 
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState(null);
     const [done, setDone] = useState(null);
+    const [toast, setToast] = useState(null);
+    const [lightboxSrc, setLightboxSrc] = useState(null);
     const quoteTimer = useRef(null);
     const [showTransportModal, setShowTransportModal] = useState(false);
-    const [transportRemovedNotice, setTransportRemovedNotice] = useState(null); // NEW — summary of what was removed, or null
+    const autoPlaceRef = useRef(false);
+    const [transportRemovedNotice, setTransportRemovedNotice] = useState(null);
     const isFirstQuoteRef = useRef(true);
     const requestIdRef = useRef(0);
-    const { resolved: pincodeGeo, status: pincodeStatus, message: pincodeMessage } =
-        usePincodeResolution(showNewAddress ? newAddress.pincode : null);
     const pendingQuoteRef = useRef(Promise.resolve());
+    const [quoteFailed, setQuoteFailed] = useState(false);
     const standardBasisRef = useRef(defaultBasis);
 
     useEffect(() => {
-        if (!isSample && basis !== "per_unit") {
-            standardBasisRef.current = basis;
-        }
+        if (!isSample && basis !== "per_unit") standardBasisRef.current = basis;
     }, [isSample, basis]);
 
     useEffect(() => {
@@ -401,61 +475,157 @@ export default function BuyNowModal({ seller, product, onClose }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isSample]);
 
+    // If the buyer comes back with the browser's Back button, the page can be restored from the
+    // back/forward cache with our "redirecting" state frozen. Unfreeze it; the pending-payment
+    // panel (below) then lets them retry or edit.
+    useEffect(() => {
+        const onShow = (e) => {
+            if (e.persisted) { setRedirecting(false); setSubmitting(false); }
+        };
+        window.addEventListener("pageshow", onShow);
+        return () => window.removeEventListener("pageshow", onShow);
+    }, []);
+
+    // ---- Product details (image, specs, description…) — non-blocking ----
+    const [detail, setDetail] = useState(null);
+    useEffect(() => {
+        if (!product?.id) return;
+        let cancelled = false;
+        fetchBrandItemDetail(product.id)
+            .then((res) => { if (!cancelled && res?.success) setDetail(res.item); })
+            .catch(() => { /* header still renders from `product` */ });
+        return () => { cancelled = true; };
+    }, [product?.id]);
+
+    // ---- Credit ----
+    // creditState: "loading" -> "ready" (credit row, or null = never asked) | "error" (couldn't load).
+    // The footer only offers "Ask for credit" once the state is "ready", so a buyer who already has
+    // (or has requested) credit is never shown a wrong button while the status is still loading.
     const [creditStatus, setCreditStatus] = useState(null);
+    const [creditState, setCreditState] = useState("loading");
+    const [requestingCredit, setRequestingCredit] = useState(false);
+    const [creditAskError, setCreditAskError] = useState(null);
 
-    useEffect(() => {
-        if (pincodeGeo) {
-            setNewAddress((a) => ({ ...a, city: pincodeGeo.district, state: pincodeGeo.state }));
+    // keepIfEmpty: a refresh must never wipe a status we already know about with an empty reply.
+    const loadCreditStatus = useCallback(async ({ keepIfEmpty = false } = {}) => {
+        if (!seller?.offerId || !token) { setCreditState("error"); return; }
+        try {
+            const res = await fetchCreditStatus(token, { submissionId: seller.offerId });
+            if (!res || res.success === false) {
+                setCreditState((s) => (s === "ready" ? s : "error"));
+                return;
+            }
+            if (res.credit || !keepIfEmpty) setCreditStatus(res.credit || null);
+            setCreditState("ready");
+        } catch {
+            setCreditState((s) => (s === "ready" ? s : "error"));
         }
-    }, [pincodeGeo]);
-
-    // No longer waits for access to resolve first; fires the moment
-    // seller.offerId/token are known, in parallel with fetchCheckoutStatus
-    // instead of after it. Removes one full round trip of pure waiting.
-    useEffect(() => {
-        if (!seller?.offerId || !token) return;
-        fetchCreditStatus(token, { submissionId: seller.offerId }).then((res) => setCreditStatus(res?.credit || null));
     }, [seller?.offerId, token]);
 
-    const canBuyOnCredit = creditStatus?.status === "approved";
-    const [requestingIncrease, setRequestingIncrease] = useState(false); // NEW
+    useEffect(() => { loadCreditStatus(); }, [loadCreditStatus]);
 
-    // NEW — "crosses limit" is based on THIS order's total vs what's left,
-    // not on the limit being fully drained already.
+    // Live: the server emits `credit:changed` on every credit action (approve, decline, limit,
+    // usage…). Refetch so the modal reacts the moment the seller answers.
+    useEffect(() => {
+        if (!socket) return undefined;
+        const onCredit = () => loadCreditStatus({ keepIfEmpty: true });
+        socket.on("credit:changed", onCredit);
+        return () => socket.off("credit:changed", onCredit);
+    }, [socket, loadCreditStatus]);
+
+    const canBuyOnCredit = creditStatus?.status === "approved";
+    const [requestingIncrease, setRequestingIncrease] = useState(false);
     const creditRemaining = creditStatus
         ? Math.max(Number(creditStatus.credit_limit || 0) - Number(creditStatus.credit_used || 0), 0)
         : 0;
-    const crossesCreditLimit = canBuyOnCredit && !!quote && Number(quote.subtotal || 0) > creditRemaining;
+    const crossesCreditLimit = isCredit && canBuyOnCredit && !!quote && Number(quote.subtotal || 0) > creditRemaining;
     const limitIncreasePending = !!creditStatus?.limit_increase_request_message_id;
     const limitIncreaseCooldownActive = !!creditStatus?.limit_increase_cooldown_until
         && new Date(creditStatus.limit_increase_cooldown_until) > new Date();
+    const fmtDate = (d) => new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+
+    // Buyer picks between "Pay now" and "Pay on credit" (remembered, so the default never overrides it).
+    const pickPayMode = (mode) => {
+        payModeChoiceRef.current = mode;
+        setOrderMode(mode);
+    };
+
+    // The mode to use for a "standard order" (i.e. when leaving sample mode).
+    const standardPayMode = () => {
+        const chosen = payModeChoiceRef.current;
+        if (chosen === "standard") return "standard";
+        return canBuyOnCredit ? "credit" : "standard";
+    };
+
+    // DEFAULT PAYMENT METHOD: once the credit status is known, approved buyers start on
+    // "Pay on credit" instead of "Pay now". Skipped if the buyer (or a resumed order) already chose,
+    // and never touches sample orders.
+    useEffect(() => {
+        if (creditState !== "ready" || payModeChoiceRef.current) return;
+        setOrderMode((m) => (m === "sample" ? m : canBuyOnCredit ? "credit" : "standard"));
+    }, [creditState, canBuyOnCredit]);
+
+    // Credit is no longer available (turned off / revoked while open): fall back to Pay now and
+    // forget any "credit" choice so the default applies again if it comes back.
+    useEffect(() => {
+        if (creditState !== "loading" && isCredit && !canBuyOnCredit) {
+            payModeChoiceRef.current = null;
+            setOrderMode("standard");
+        }
+    }, [isCredit, canBuyOnCredit, creditState]);
+
+    useEffect(() => { setCreditAskError(null); }, [creditStatus?.status, orderMode]);
 
     const handleRequestCreditIncrease = async () => {
         if (!creditStatus?.id) return;
+        setCreditAskError(null);
         setRequestingIncrease(true);
-        const res = await requestCreditIncreaseApi(token, creditStatus.id);
+        let res;
+        try { res = await requestCreditIncreaseApi(token, creditStatus.id); } catch { res = null; }
         setRequestingIncrease(false);
-        if (!res?.success) { setError(res?.message || "Couldn't send the request for a higher limit."); return; }
-        // reflect "pending" immediately so the button swaps to the waiting state
+        if (!res?.success) { setCreditAskError(res?.message || "Couldn't send the request for a higher limit."); return; }
         setCreditStatus((prev) => (prev ? { ...prev, limit_increase_request_message_id: "pending" } : prev));
     };
 
+    // Quick "Ask for credit" from the footer. requestCredit takes the seller's USER id
+    // (same call the Credit page makes); `sellerUserId` is used when the seller payload has it,
+    // otherwise `sellerId`.
+    const handleAskCredit = async () => {
+        if (requestingCredit) return;
+        const sellerUserId = seller?.sellerUserId ?? seller?.sellerId;
+        if (!sellerUserId && !seller?.offerId) {
+            setCreditAskError("Couldn't identify the seller for a credit request.");
+            return;
+        }
+        setCreditAskError(null);
+        setRequestingCredit(true);
+        let res;
+        try {
+            res = await requestCreditApi(token, { sellerUserId, submissionId: seller.offerId });
+        } catch (e) {
+            res = { success: false, message: e?.message };
+        }
+        if (!res?.success) {
+            setRequestingCredit(false);
+            setCreditAskError(res?.message || "Couldn't send the credit request. Please try again.");
+            return;
+        }
+        setCreditStatus((prev) => ({ ...(prev || {}), status: "pending" }));
+        setCreditState("ready");
+        setToast("Credit request sent to the seller");
+        await loadCreditStatus({ keepIfEmpty: true });
+        setRequestingCredit(false);
+    };
 
+    // Instant local quote, then the confirmed server quote below.
     useEffect(() => {
-        if (isCredit && !canBuyOnCredit) setOrderMode("standard");
-    }, [isCredit, canBuyOnCredit]);
-
-    const effectivePincode = showNewAddress ? newAddress.pincode : selectedAddress?.pincode;
-    const effectiveState = showNewAddress ? newAddress.state : selectedAddress?.state;
-    const effectiveCity = showNewAddress ? newAddress.city : selectedAddress?.city;
-
-    useEffect(() => {
+        if (deferPriceUntilConfirmed) return; // never show a non-custom estimate
         if (!(Number(quantity) > 0)) { setQuote(null); return; }
         setQuote((prev) => {
-            const local = computeLocalQuote(seller, quantity, basis, isSample, effectivePincode, effectiveState, effectiveCity);
+            const local = computeLocalQuote(seller, quantity, basis, isSample);
             return local ? normalizeQuote(local) : prev;
         });
-    }, [seller, quantity, basis, isSample, effectivePincode, effectiveState]);
+    }, [seller, quantity, basis, isSample, effectivePincode, effectiveState, deferPriceUntilConfirmed]);
 
     useEffect(() => {
         const lenis = window.lenis;
@@ -463,18 +633,21 @@ export default function BuyNowModal({ seller, product, onClose }) {
         return () => { lenis?.start?.(); };
     }, []);
 
-    // Preference was resolved for a specific destination route. If the buyer
-    // changes the shipping address to a different city/state inside the
-    // modal, that preference no longer applies to the (new) route — clear it
-    // so "Set preference" reappears instead of silently keeping a stale pick.
     useEffect(() => {
-        if (!transportPreference?.destCity || !transportPreference?.destState) return;
+        const original = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        return () => { document.body.style.overflow = original; };
+    }, []);
+
+    useEffect(() => {
+        const pref = transportPrefRef.current;
+        if (!pref?.destCity || !pref?.destState) return;
         if (!effectiveCity || !effectiveState) return;
         const sameRoute =
-            transportPreference.destCity.trim().toLowerCase() === effectiveCity.trim().toLowerCase() &&
-            transportPreference.destState.trim().toLowerCase() === effectiveState.trim().toLowerCase();
+            pref.destCity.trim().toLowerCase() === effectiveCity.trim().toLowerCase() &&
+            pref.destState.trim().toLowerCase() === effectiveState.trim().toLowerCase();
         if (!sameRoute) setTransportPreference(null);
-    }, [effectiveCity, effectiveState]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [effectiveCity, effectiveState]);
 
     useEffect(() => {
         let cancelled = false;
@@ -497,6 +670,7 @@ export default function BuyNowModal({ seller, product, onClose }) {
         return () => clearInterval(id);
     }, []);
 
+    // Informational ONLY — a closed seller never blocks placing an order.
     const windowStatus = useMemo(
         () => checkOrderWindow(constraints ? {
             workingDays: constraints.workingDays,
@@ -508,54 +682,11 @@ export default function BuyNowModal({ seller, product, onClose }) {
         [constraints, clockTick]
     );
 
-    // Only evaluate serviceability once the buyer has finished entering a
-    // pincode — checking on every city/state keystroke was noisy and could
-    // flash a false "not serviceable" notice mid-typing.
-    const PINCODE_RE = /^\d{6}$/;
-
     const locationStatus = useMemo(() => {
-        if (!PINCODE_RE.test(effectivePincode || "")) {
-            return { serviceable: true };
-        }
-        const result = checkLocationServiceable(constraints?.dispatchingLocations, { state: effectiveState, city: effectiveCity });
-        console.log("[locationStatus]", {
-            pincode: effectivePincode,
-            state: effectiveState,
-            city: effectiveCity,
-            constraintsLoaded: !!constraints,
-            dispatchingLocations: constraints?.dispatchingLocations,
-            result,
-        });
-        return result;
+        if (!/^\d{6}$/.test(effectivePincode || "")) return { serviceable: true };
+        return checkLocationServiceable(constraints?.dispatchingLocations, { state: effectiveState, city: effectiveCity });
     }, [constraints, effectivePincode, effectiveState, effectiveCity]);
-
     const blockedByConstraints = !locationStatus.serviceable;
-
-    // Only needs a token to exist, not the full checkout-status
-    // round trip to resolve first. If access later comes back as not-eligible,
-    // the gate screen still shows correctly — this fetch running early just
-    // means addresses are ready the instant the form actually renders instead
-    // of after a second serial round trip.
-    useEffect(() => {
-        if (!token) return;
-        let cancelled = false;
-        (async () => {
-            const res = await fetchBuyerAddresses(token);
-            if (cancelled || !res?.success) return;
-            setAddresses(res.addresses || []);
-            const def = res.addresses?.find((a) => a.is_default) || res.addresses?.[0];
-            if (def) {
-                setSelectedAddressId(def.id);
-            } else {
-                const bpRes = await fetchBusinessProfile(token);
-                if (cancelled) return;
-                const seeded = bpRes?.success ? seedFromBusinessProfile(bpRes.profile, access?.profile?.phone) : null;
-                setNewAddress(seeded || EMPTY_ADDRESS);
-                setShowNewAddress(true);
-            }
-        })();
-        return () => { cancelled = true; };
-    }, [token]);
 
     useEffect(() => {
         if (isSample) {
@@ -566,16 +697,7 @@ export default function BuyNowModal({ seller, product, onClose }) {
         }
     }, [isSample, seller?.sampleQuantity]);
 
-    useEffect(() => {
-        if (!(Number(quantity) > 0)) { setQuote(null); return; }
-        setQuote((prev) => {
-            const local = computeLocalQuote(seller, quantity, basis, isSample, effectivePincode, effectiveState);
-            return local ? normalizeQuote(local) : prev;
-        });
-    }, [seller, quantity, basis, isSample, effectivePincode, effectiveState]);
-
-
-    // In the quote-fetch effect — only the setTimeout delay changes:
+    // Server quote (debounced; first one immediate)
     useEffect(() => {
         if (!seller?.offerId || !(Number(quantity) > 0)) return;
         clearTimeout(quoteTimer.current);
@@ -584,14 +706,9 @@ export default function BuyNowModal({ seller, product, onClose }) {
         const basisAtSchedule = basis;
         const sampleAtSchedule = isSample;
         const addressAtSchedule = selectedAddressId;
-        const destPincodeAtSchedule = effectivePincode;   // NEW
-        const destStateAtSchedule = effectiveState;       // NEW
+        const destPincodeAtSchedule = effectivePincode;
+        const destStateAtSchedule = effectiveState;
 
-
-        // CHANGED: first quote fetch on modal open fires immediately instead
-        // of waiting the full 300ms debounce — that delay exists to avoid
-        // spamming the endpoint while someone's actively changing quantity,
-        // which doesn't apply to the very first render.
         const delay = isFirstQuoteRef.current ? 0 : 300;
         isFirstQuoteRef.current = false;
 
@@ -601,55 +718,47 @@ export default function BuyNowModal({ seller, product, onClose }) {
                     purchaseBasis: basisAtSchedule,
                     orderType: sampleAtSchedule ? "sample" : "standard",
                     addressId: addressAtSchedule || undefined,
-                    destPincode: addressAtSchedule ? undefined : destPincodeAtSchedule,  // NEW
-                    destState: addressAtSchedule ? undefined : destStateAtSchedule,      // NEW
+                    destPincode: addressAtSchedule ? undefined : destPincodeAtSchedule,
+                    destState: addressAtSchedule ? undefined : destStateAtSchedule,
+                    token,
                 });
                 if (myRequestId === requestIdRef.current && res?.success) {
                     const confirmed = normalizeQuote({ ...res, isEstimate: false });
                     setQuote(confirmed);
+                    setQuoteFailed(false);
                     resolve(confirmed);
                 } else {
+                    if (myRequestId === requestIdRef.current) setQuoteFailed(true);
                     resolve(null);
                 }
             }, delay);
         });
 
         return () => clearTimeout(quoteTimer.current);
-    }, [seller?.offerId, quantity, basis, isSample, selectedAddressId, effectivePincode, effectiveState]);
+    }, [seller?.offerId, quantity, basis, isSample, selectedAddressId, effectivePincode, effectiveState]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    const awaitQuote = () => Promise.race([
+        pendingQuoteRef.current,
+        new Promise((resolve) => setTimeout(() => resolve(null), 3000)),
+    ]);
 
-    // REPLACE the old "clear preference on address change" effect with this:
-    //
-    // Whenever the buyer's effective destination (city/state) changes — either
-    // by picking a different saved address or by a new address's pincode
-    // resolving — the transport preference is no longer guaranteed to apply,
-    // since it's keyed per (buyer, seller, destination route). Re-resolve it:
-    //   1. If the preference already in state was resolved for this exact
-    //      route (e.g. it came in pre-attached from the feed for the default
-    //      address), trust it — no need to re-fetch.
-    //   2. Otherwise, ask the backend whether a decision already exists for
-    //      this seller on this new route. If yes, adopt it immediately.
-    //   3. If no decision exists yet for this route, clear the stale
-    //      preference AND open the picker automatically so the buyer isn't
-    //      left silently defaulting to "seller decides" without being asked.
+    // ---- Transport preference for this route (one merged check per route) ----
     const lastCheckedRouteRef = useRef(null);
-
     useEffect(() => {
         if (!effectiveCity || !effectiveState || !seller?.sellerId) return;
-
         const routeKey = `${effectiveState.trim().toLowerCase()}::${effectiveCity.trim().toLowerCase()}`;
         if (lastCheckedRouteRef.current === routeKey) return;
         lastCheckedRouteRef.current = routeKey;
-
-        const sameAsCurrent =
-            transportPreference?.destCity?.trim().toLowerCase() === effectiveCity.trim().toLowerCase() &&
-            transportPreference?.destState?.trim().toLowerCase() === effectiveState.trim().toLowerCase();
-        if (sameAsCurrent) return;
 
         let cancelled = false;
         (async () => {
             const res = await fetchBuyerTransportPreference(seller.sellerId, effectiveState, effectiveCity, token);
             if (cancelled) return;
+
+            const cur = transportPrefRef.current;
+            const sameAsCurrent =
+                cur?.destCity?.trim().toLowerCase() === effectiveCity.trim().toLowerCase() &&
+                cur?.destState?.trim().toLowerCase() === effectiveState.trim().toLowerCase();
 
             const pendingProposal = res?.pendingProposal
                 ? { ...res.pendingProposal, destCity: effectiveCity, destState: effectiveState }
@@ -657,95 +766,78 @@ export default function BuyNowModal({ seller, product, onClose }) {
             setPendingTransportProposal(pendingProposal);
 
             if (res?.rejectedNotice) {
-                // NEW: an unacknowledged rejection always wins — clear whatever
-                // else was showing and force the picker open with the reason,
-                // regardless of the decided/pending state otherwise returned.
                 setTransportPreference(null);
-                setTransportRemovedNotice(`Your proposed transport option (${res.rejectedNotice.summary}) wasn't accepted by the seller.`);
-                setShowTransportModal(true);
-                return;
-            }
-
-            if (res?.success && res.decided) {
-                setTransportPreference(res.preference ? { ...res.preference, destCity: effectiveCity, destState: effectiveState } : null);
-                setTransportRemovedNotice(null);
-            } else {
-                setTransportPreference(null);
-                setTransportRemovedNotice(res?.invalidated ? "The seller no longer offers your previously selected transport option." : null);
-                if (!pendingProposal) setShowTransportModal(true);
-            }
-        })();
-
-        return () => { cancelled = true; };
-    }, [effectiveCity, effectiveState, seller?.sellerId, token]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    // One-time validation of whatever preference the modal opened with — it
-    // may have been resolved earlier (e.g. by HomeProductFeed before the
-    // modal opened) and the seller could have removed it since then.
-    const initialPreferenceCheckedRef = useRef(false);
-    useEffect(() => {
-        if (initialPreferenceCheckedRef.current) return;
-        if (!seller?.sellerId || !effectiveCity || !effectiveState) return;
-        initialPreferenceCheckedRef.current = true;
-
-        (async () => {
-            const res = await fetchBuyerTransportPreference(seller.sellerId, effectiveState, effectiveCity, token);
-            if (res?.rejectedNotice) {
-                setTransportPreference(null);
-                setTransportRemovedNotice(`Your proposed transport option (${res.rejectedNotice.summary}) wasn't accepted by the seller.`);
-                setShowTransportModal(true);
+                setTransportRemovedNotice(
+                    `Your proposed transport option (${res.rejectedNotice.summary}) wasn't accepted by the seller.` +
+                    (res.rejectedNotice.reason ? ` Reason: ${res.rejectedNotice.reason}` : "")
+                );
+                if (res.rejectedNotice.routeOptionId) reportRejected(res.rejectedNotice.routeOptionId, res.rejectedNotice.reason || null);
                 return;
             }
             if (res?.invalidated) {
                 setTransportPreference(null);
                 setTransportRemovedNotice("The seller no longer offers your previously selected transport option.");
-                setShowTransportModal(true);
+                return;
+            }
+            if (sameAsCurrent) return;
+            if (res?.success && res.decided) {
+                setTransportPreference(res.preference ? { ...res.preference, destCity: effectiveCity, destState: effectiveState } : null);
+                setTransportRemovedNotice(null);
+            } else {
+                setTransportPreference(null);
             }
         })();
-    }, [seller?.sellerId, effectiveCity, effectiveState, token]);
 
-    const setAddrField = (key, value) => setNewAddress((a) => ({ ...a, [key]: value }));
+        return () => {
+            cancelled = true;
+            if (lastCheckedRouteRef.current === routeKey) lastCheckedRouteRef.current = null;
+        };
+    }, [effectiveCity, effectiveState, seller?.sellerId, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const handleSaveNewAddress = async () => {
-        const missing = ["contact_name", "contact_phone", "address_line1", "city", "state", "pincode"].filter((k) => !newAddress[k].trim());
-        if (missing.length) { setError("Please fill in the shipping address completely."); return null; }
+    // ---- Start the JioPay payment for an order that is awaiting payment ----
+    const beginPayment = async (orderId, orderNumber) => {
         setError(null);
-        const res = await createBuyerAddress(token, { ...newAddress, is_default: addresses.length === 0 });
-        if (!res?.success) { setError(res?.message || "Couldn't save address."); return null; }
-        setAddresses((prev) => [res.address, ...prev]);
-        setSelectedAddressId(res.address.id);
-        setShowNewAddress(false);
-        return res.address.id;
+        setSubmitting(true);
+        // Remember the order BEFORE leaving, so Back from the gateway shows retry / edit.
+        setPendingPay({ orderId, orderNumber: orderNumber || null });
+        const pay = await startOrderPayment(token, orderId);
+        if (!pay?.success || !pay.redirectUrl) {
+            setSubmitting(false);
+            setError(pay?.message || "Couldn't start the payment. Please try again.");
+            return;
+        }
+        setRedirecting(true);
+        if (!redirectToGateway(pay.redirectUrl)) {
+            setRedirecting(false);
+            setSubmitting(false);
+            setError("Couldn't open the payment page. Please try again.");
+        }
+        // On success the whole window navigates away; keep the spinner up until it does.
     };
 
-    const handleSubmit = async (explicitOrderType) => {
+    // ---- Place order ----
+    const handleSubmit = async (override = {}) => {
         setError(null);
-        if (!windowStatus.open) return setError(windowStatus.message);
+        if (!selectedAddressId) return setError("Please add a delivery address first.");
         if (!locationStatus.serviceable) return setError(locationStatus.message);
 
         if (!isSample && Number(quantity) < minQuantity) {
-            setError(`Minimum order quantity is ${minQuantity} ${moqUnitLabel}${minQuantity === 1 ? "" : "s"}.`);
-            return;
+            return setError(`Minimum order quantity is ${minQuantity} ${moqUnitLabel}${minQuantity === 1 ? "" : "s"}.`);
         }
         if (!isSample && maxQuantity != null && Number(quantity) > Number(maxQuantity)) {
-            setError(Number(maxQuantity) <= 0
+            return setError(Number(maxQuantity) <= 0
                 ? "This item is currently out of stock with this seller."
                 : `You can order at most ${maxQuantity} ${saleUnitLabel(seller?.masterPackSize)}${Number(maxQuantity) === 1 ? "" : "s"} from this seller.`);
-            return;
-        }
-
-        let addressId = selectedAddressId;
-        if (showNewAddress || !addressId) {
-            addressId = await handleSaveNewAddress();
-            if (!addressId) return;
         }
         if (!(Number(quantity) > 0)) return setError("Please enter a valid quantity.");
 
-        setSubmitting(true);
+        const routeOptionId = override.routeOptionId ?? transportPreference?.routeOptionId;
+        if (!routeOptionId) return setError("Please select a transport preference.");
 
-        const confirmed = await pendingQuoteRef.current;
+        setSubmitting(true);
+        const confirmed = await awaitQuote();
         const finalQuote = confirmed || quote;
-        const effectiveOrderType = explicitOrderType || (isSample ? "sample" : "standard");
+        const effectiveOrderType = isSample ? "sample" : isCredit ? "credit" : "standard";
 
         if (finalQuote) {
             if (effectiveOrderType === "sample" && finalQuote.exceedsSampleQuantity) {
@@ -763,77 +855,99 @@ export default function BuyNowModal({ seller, product, onClose }) {
             quantity: Number(quantity),
             purchaseBasis: basis,
             orderType: effectiveOrderType,
-            shippingAddressId: addressId,
+            shippingAddressId: selectedAddressId,
             notes: notes.trim() || undefined,
-            transportRouteOptionId: transportPreference?.routeOptionId || undefined,
+            transportRouteOptionId: routeOptionId,
         });
-        setSubmitting(false);
-        if (!res?.success) return setError(res?.message || "Couldn't place the order.");
+        if (!res?.success) {
+            setSubmitting(false);
+            return setError(res?.message || "Couldn't place the order.");
+        }
 
         if (res.orderStatus === "awaiting_payment") {
-            saveOrderFormSession({
-                orderId: res.orderId,
-                seller,
-                product,
-                quantity,
-                basis,
-                selectedAddressId,
-                showNewAddress,
-                newAddress,
-                notes,
-                orderMode: effectiveOrderType
-            });
-            setAwaitingPaymentOrderId(res.orderId);
+            // Standard order: straight on to JioPay.
+            await beginPayment(res.orderId, res.orderNumber);
         } else {
+            setSubmitting(false);
             setDone(res);
         }
     };
 
-    const restoreFromSession = (session) => {
-        if (!session) return;
-        setQuantity(session.quantity);
-        userPickedBasis.current = true;
-        setBasis(session.basis);
-        setSelectedAddressId(session.selectedAddressId);
-        setShowNewAddress(session.showNewAddress);
-        setNewAddress(session.newAddress || EMPTY_ADDRESS);
-        setNotes(session.notes || "");
-        setOrderMode(session.orderMode || "standard");
-    };
-
-    // useEffect(() => {
-    //     const session = loadOrderFormSession();
-    //     if (session && session.seller?.offerId === seller?.offerId) {
-    //         restoreFromSession(session);
-    //     }
-    //     // eslint-disable-next-line react-hooks/exhaustive-deps
-    // }, []);
-
-    useEffect(() => {
-        const session = loadOrderFormSession();
-        if (session && session.seller?.offerId === seller?.offerId && session.orderId) {
-            // only restore if this session corresponds to a still-pending order
-            restoreFromSession(session);
+    // "Edit order": cancel the unpaid order and return to the form. Never cancels an order that was
+    // actually paid in the meantime (the payment can complete while the buyer is on this panel).
+    const handleEditOrder = async () => {
+        if (!pendingPay || submitting) return;
+        setError(null);
+        setSubmitting(true);
+        const current = await fetchOrderById(token, pendingPay.orderId);
+        const status = current?.order?.status;
+        if (current?.success && status && status !== "awaiting_payment") {
+            setSubmitting(false);
+            setPendingPay(null);
+            onClose();
+            navigate(`/orders/${pendingPay.orderId}`);
+            return;
         }
-    }, []);
-
-    const handleCloseToEdit = () => {
-        const session = loadOrderFormSession(awaitingPaymentOrderId);
-        restoreFromSession(session);
-        clearPaymentSession();
-        clearOrderFormSession();
-        setAwaitingPaymentOrderId(null);
+        const res = await cancelMyOrder(token, pendingPay.orderId, "Buyer went back to edit the order before paying");
+        setSubmitting(false);
+        if (!res?.success) {
+            setError(res?.message || "Couldn't reopen the order for editing. Please try again.");
+            return;
+        }
+        setPendingPay(null);
     };
+
+    const handleAddToCart = async () => {
+        setError(null);
+        if (quote && quote.meetsMoq === false) return setError(`Minimum order quantity is ${formatMoqForBasis(quote.moq, seller)}.`);
+        if (maxQuantity != null && Number(quantity) > Number(maxQuantity)) {
+            return setError(`You can order at most ${maxQuantity} ${saleUnitLabel(seller?.masterPackSize)}${Number(maxQuantity) === 1 ? "" : "s"} from this seller.`);
+        }
+        const confirmed = await awaitQuote();
+        const finalQuote = confirmed || quote;
+        if (finalQuote && finalQuote.meetsMoq === false) return setError(`Minimum order quantity is ${formatMoqForBasis(finalQuote.moq, seller)}.`);
+        setSubmitting(true);
+        const res = await addToCart(token, { submissionId: seller.offerId, quantity: Number(quantity), purchaseBasis: basis });
+        setSubmitting(false);
+        if (!res?.success) return setError(res?.message || "Couldn't add to cart.");
+        onClose();
+        navigate("/save/cart");
+    };
+
+    const resumeAppliedRef = useRef(false);
+    useEffect(() => {
+        const ri = resumeIntentProp || location.state?.resumeIntent;
+        if (!ri || resumeAppliedRef.current) return;
+        if (ri.source !== "buynow" || ri.offerId !== seller?.offerId) return;
+        resumeAppliedRef.current = true;
+
+        setQuantity(ri.quantity);
+        userPickedBasis.current = true;
+        setBasis(ri.basis);
+        setOrderMode(ri.orderMode || "standard");
+        // A resumed order keeps exactly the payment method it had (no credit default on top of it).
+        payModeChoiceRef.current = ri.orderMode === "credit" || ri.orderMode === "standard" ? ri.orderMode : null;
+        setNotes(ri.notes || "");
+        restoreAddressIdRef.current = ri.addressId || null;
+
+        if (ri.resolvedMode) {
+            setTransportPreference({
+                routeOptionId: ri.resolvedRouteOptionId,
+                mode: ri.resolvedMode,
+                fields: ri.resolvedFields,
+                destCity: ri.destCity,
+                destState: ri.destState,
+            });
+            setPendingTransportProposal(null);
+        }
+        navigate(location.pathname + location.search, { replace: true, state: {} });
+    }, [location.state, seller?.offerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const gateContent = {
         NOT_AUTHENTICATED: {
             title: "Sign in to place an order",
             body: "You'll need to sign in to your BBM Marketplace account first.",
             cta: "Sign in",
-            // CHANGED: carry the current path (the shared product link, or
-            // wherever else BuyNowModal was opened from) so AuthPage can send
-            // the person back here once they're signed in, instead of
-            // dumping them on /home.
             action: () => navigate("/login", { state: { from: location.pathname + location.search } }),
         },
         NOT_VERIFIED: {
@@ -844,36 +958,14 @@ export default function BuyNowModal({ seller, product, onClose }) {
         },
     }[access?.reason] || { title: "Can't place an order right now", body: "Please try again in a moment.", cta: "Close", action: onClose };
 
-    const [requestingCredit, setRequestingCredit] = useState(false);
-    const handleRequestCredit = async () => {
-        if (!seller?.offerId) { setError("Couldn't reach this seller right now."); return; }
-        setRequestingCredit(true);
-        const reqRes = await requestCreditApi(token, { submissionId: seller.offerId });
-        setRequestingCredit(false);
-        if (!reqRes?.success) { setError(reqRes?.message || "Couldn't send the credit request."); return; }
-        onClose();
-        navigate(`/chat/${reqRes.conversationId}`);
-    };
-
-    // If the buyer has a proposal awaiting seller approval for this route,
-    // check whether it's since been approved — the seller's approved-options
-    // list will include it once approveProposal flips its status. If so,
-    // silently adopt it as the active preference instead of leaving the
-    // buyer stuck on a stale "awaiting approval" notice.
-    // While a proposal is awaiting the seller's decision, poll its live
-    // status periodically (piggybacking on the existing 30s clockTick) so
-    // this modal picks up an approval or rejection even if it happened while
-    // the modal was already open, not just once on mount.
     useEffect(() => {
         if (!pendingTransportProposal?.routeOptionId || !seller?.sellerId || !effectiveCity || !effectiveState) return;
-
         let cancelled = false;
         (async () => {
             const res = await fetchBuyerTransportPreference(
                 seller.sellerId, effectiveState, effectiveCity, token, pendingTransportProposal.routeOptionId
             );
             if (cancelled || !res?.success) return;
-
             if (res.checkedProposalStatus === "approved") {
                 const resolved = {
                     routeOptionId: pendingTransportProposal.routeOptionId,
@@ -885,62 +977,218 @@ export default function BuyNowModal({ seller, product, onClose }) {
                 setTransportPreference(resolved);
                 setPendingTransportProposal(null);
                 setTransportRemovedNotice(null);
+                reportApproved(pendingTransportProposal.routeOptionId, resolved);
             } else if (res.checkedProposalStatus === "rejected") {
                 setPendingTransportProposal(null);
                 setTransportPreference(null);
-                setTransportRemovedNotice(`Your proposed transport option (${pendingTransportProposal.summary}) wasn't accepted by the seller.`);
-                setShowTransportModal(true);
+                setTransportRemovedNotice(
+                    `Your proposed transport option (${pendingTransportProposal.summary}) wasn't accepted by the seller.` +
+                    (res.rejectedReason ? ` Reason: ${res.rejectedReason}` : "")
+                );
+                reportRejected(pendingTransportProposal.routeOptionId, res.rejectedReason || null);
             }
-            // "proposed" (still pending) or "removed"/"not_found" (edge case,
-            // e.g. seller deleted the row outright) — leave state as-is for
-            // "proposed"; "removed"/"not_found" is rare enough to just fall
-            // through and get caught by the next full route re-check instead.
         })();
-
         return () => { cancelled = true; };
-    }, [clockTick, pendingTransportProposal?.routeOptionId, seller?.sellerId, effectiveCity, effectiveState, token]);
+    }, [clockTick, pendingTransportProposal?.routeOptionId, seller?.sellerId, effectiveCity, effectiveState, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const handleBackToEdit = async () => {
-        if (awaitingPaymentOrderId) {
-            const res = await cancelMyOrder(token, awaitingPaymentOrderId, "Buyer went back to edit the order before paying");
-            if (!res?.success) {
-                console.warn("Couldn't cancel the pending order before going back:", res?.message);
+    useEffect(() => {
+        if (!socket) return;
+        const onNotif = async (payload) => {
+            const routeOptionId = payload?.routeOptionId;
+            if (!routeOptionId) return;
+            if (!pendingTransportProposal || pendingTransportProposal.routeOptionId !== routeOptionId) return;
+
+            if (payload.type === "transport_proposal_approved") {
+                const res = await fetchBuyerTransportPreference(seller.sellerId, effectiveState, effectiveCity, token, routeOptionId);
+                if (res?.checkedProposalStatus === "approved" && res?.preference) {
+                    const resolved = {
+                        routeOptionId: pendingTransportProposal.routeOptionId,
+                        mode: pendingTransportProposal.mode,
+                        fields: pendingTransportProposal.fields,
+                        summary: pendingTransportProposal.summary,
+                        destCity: effectiveCity, destState: effectiveState,
+                    };
+                    setTransportPreference(resolved);
+                    setPendingTransportProposal(null);
+                    setTransportRemovedNotice(null);
+                    reportApproved(routeOptionId, resolved);
+                }
+            } else if (payload.type === "transport_proposal_rejected") {
+                setPendingTransportProposal(null);
+                setTransportPreference(null);
+                setTransportRemovedNotice(
+                    `Your proposed transport option (${pendingTransportProposal.summary}) wasn't accepted by the seller.` +
+                    (payload.reason ? ` Reason: ${payload.reason}` : "")
+                );
+                reportRejected(routeOptionId, payload.reason || null);
             }
-        }
-        clearPaymentSession();
-        setAwaitingPaymentOrderId(null);
-    };
+        };
+        socket.on("notification:new", onNotif);
+        return () => socket.off("notification:new", onNotif);
+    }, [socket, pendingTransportProposal, seller?.sellerId, effectiveCity, effectiveState, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    const hasTerms = seller && (seller.deliveryTimeline || seller.paymentTerms || seller.returnPolicy || seller.warranty || seller.hsnCode || seller.freightIncluded != null || seller.dispatchOrigin);
-    const canSample = seller?.sampleAvailable;
+    useEffect(() => {
+        const key = pendingTransportProposal?.routeOptionId || resumeIntentProp?.proposalRouteOptionId || null;
+        if (!key) return;
+        registerActive(key);
+        return () => unregisterActive(key);
+    }, [pendingTransportProposal?.routeOptionId, resumeIntentProp?.proposalRouteOptionId, registerActive, unregisterActive]);
+
+    useEffect(() => {
+        if (!toast) return;
+        const t = setTimeout(() => setToast(null), 2200);
+        return () => clearTimeout(t);
+    }, [toast]);
+
+    /* ---------------- derived display values ---------------- */
+    const moqUnitLabel = basis === "per_master_pack" ? "Master Pack" : "Pack";
     const basisLabel = basis === "per_pack" ? "pack(s)" : basis === "per_master_pack" ? "master pack(s)" : (seller?.unit || "units");
     const deliveryDateLabel = (val) => (typeof val === "string" && /^\d{4}-\d{2}-\d{2}/.test(val) ? formatDDMon(new Date(val)) : val);
-    const moqUnitLabel = basis === "per_master_pack" ? "Master Pack" : "Pack";
-    const creditCooldownActive = creditStatus?.status === "rejected" && creditStatus.cooldown_until && new Date(creditStatus.cooldown_until) > new Date();
+    const canSample = seller?.sampleAvailable;
 
-    /* ============================================================
-       REDESIGNED RENDER
-       ============================================================ */
+    // While deferring, no price is shown until the server has confirmed it.
+    const priceLoading = deferPriceUntilConfirmed && !quoteFailed && (!quote || quote.isEstimate);
+
+    const productName = product?.name || pick(detail, "name");
+    const brandName = product?.brand_name || product?.brandName || pick(detail, "brand_name", "brandName");
+    const brandNotApplicable = pick(detail, "brand_not_applicable", "brandNotApplicable");
+    const modelNo = product?.model_no || pick(detail, "model_no", "modelNo");
+    const gradeVariant = pick(detail, "grade_variant", "gradeVariant");
+    const manufacturer = pick(detail, "manufacturer");
+    const description = pick(detail, "description");
+    const manufacturingDetails = pick(detail, "manufacturing_details", "manufacturingDetails");
+    const specifications = detail?.specifications || [];
+    const categoryLabel = [product?.category_name || pick(detail, "category_name"), product?.subcategory_name || pick(detail, "subcategory_name")]
+        .filter((x) => x && !isHiddenLabel(x)).join(" · ");
+    const galleryImages = detail?.images?.length ? detail.images : (detail?.image ? [detail.image] : []);
+    const heroImage = product?.image || galleryImages[0] || null;
+    const brandImage = product?.brand_image || pick(detail, "brand_image", "brandImage");
+    const subLabel = [brandNotApplicable ? null : brandName, modelNo].filter(Boolean).join(" · ");
+    const packagingLine = Number(seller?.packSize) > 0
+        ? `1 pack = ${seller.packSize} ${seller.unit}${Number(seller?.masterPackSize) >= 1 ? ` · 1 master pack = ${seller.masterPackSize} packs` : ""}`
+        : null;
+    const leadDays = seller?.stockType === "made_to_order" ? seller?.productionLeadTimeDays : seller?.dispatchTimeDays;
+
+    const hasTerms = seller && (seller.deliveryTimeline || seller.paymentTerms || seller.returnPolicy || seller.warranty || seller.freightIncluded != null || seller.dispatchOrigin);
+    const hasProductDetails = !!(manufacturer || modelNo || gradeVariant || description || manufacturingDetails || specifications.length || galleryImages.length > 1);
+
+    // One quantity warning at a time, shown in the body next to the quantity rules.
+    const qtyNotice = isSample ? null
+        : outOfStock ? "This item is currently out of stock with this seller."
+            : exceedsStock ? `You can order at most ${maxQuantity} ${saleUnitLabel(seller?.masterPackSize)}${Number(maxQuantity) === 1 ? "" : "s"} from this seller. Please reduce the quantity.`
+                : quote && quote.meetsMoq === false ? `Below the seller's MOQ of ${formatMoqForBasis(quote.moq, seller)}.`
+                    : null;
+
+    /* ---------------- footer: MOQ note ---------------- */
+    // Tells the buyer which MOQ is selected and that they can't go below it for this seller's product.
+    const hasMoqNote = !isSample && Number(seller?.moq) > 0 && minQuantity > 0;
+    const moqQtyText = `${minQuantity} ${moqUnitLabel}${minQuantity === 1 ? "" : "s"}`;
+    const moqBaseText = Number(seller?.packSize) > 0 && seller?.unit
+        ? ` (${toBaseUnits(seller, minQuantity, basis)} ${seller.unit})`
+        : "";
+    const atMoq = !belowMoq && Number(quantity) === minQuantity;
+    const moqNoteText = belowMoq
+        ? `Minimum is ${moqQtyText}${moqBaseText} for this seller.`
+        : `MOQ ${moqQtyText}${moqBaseText} · can't order below this from this seller.`;
+
+    /* ---------------- footer: credit strip ---------------- */
+    // none | retry | revoked -> can ask;  pending -> waiting;  cooldown -> declined recently;
+    // approved -> nothing to ask;  unknown -> status still loading / failed (no button shown).
+    const creditKind = creditState !== "ready" ? "unknown"
+        : !creditStatus ? "none"
+            : creditStatus.status === "approved" ? "approved"
+                : creditStatus.status === "pending" ? "pending"
+                    : creditStatus.status === "rejected"
+                        ? (creditStatus.cooldown_until && new Date(creditStatus.cooldown_until) > new Date() ? "cooldown" : "retry")
+                        : creditStatus.status === "revoked" ? "revoked"
+                            : "none";
+    const canAskCredit = creditKind === "none" || creditKind === "retry" || creditKind === "revoked";
+    const sellerLabel = seller?.display_name || "the seller";
+
+    /* ---------------- primary CTA ---------------- */
+    const needsTransport = !transportPreference;
+    const waitingApproval = needsTransport && !!pendingTransportProposal;
+    const verb = isSample ? "Request sample" : isCredit ? "Buy on credit" : "Buy now";
+    const ctaLabel = !selectedAddressId
+        ? "Add delivery address"
+        : waitingApproval
+            ? "Waiting for seller approval"
+            : needsTransport
+                ? `Select transport & ${verb === "Buy now" ? "Buy now" : verb.toLowerCase()}`
+                : verb;
+    const ctaDisabled = submitting || addressLoading || blockedByConstraints || waitingApproval || priceLoading
+        || (!isSample && (belowMoq || outOfStock || exceedsStock)) || crossesCreditLimit;
+    const ctaBackground = isSample
+        ? "linear-gradient(135deg, #006F83 0%, #047084 100%)"
+        : isCredit
+            ? "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)"
+            : "linear-gradient(135deg, #d2462b 0%, #c71f11 100%)";
+
+    const handlePrimary = () => {
+        setError(null);
+        if (!selectedAddressId) { addressBookRef.current?.openChange(); return; }
+        if (!transportPreference) {
+            if (pendingTransportProposal) return;
+            autoPlaceRef.current = true;
+            setShowTransportModal(true);
+            return;
+        }
+        handleSubmit();
+    };
+
+    const stopScrollPropagation = useCallback((e) => { e.stopPropagation(); }, []);
 
     return (
         <motion.div className="fixed inset-0 z-[999] flex items-end justify-center bg-black/50 backdrop-blur-sm sm:items-center sm:p-4"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
             <motion.div
-                className="flex max-h-[94vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[24px] bg-white shadow-2xl sm:rounded-[20px]"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Place order"
+                className="bbm-buynow relative flex max-h-[94vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-[24px] bg-white shadow-2xl sm:rounded-[20px]"
                 initial={{ y: 24, opacity: 0, scale: 0.98 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ y: 24, opacity: 0 }}
                 transition={{ duration: 0.22, ease: EASE }}
                 onClick={(e) => e.stopPropagation()}>
 
-                {awaitingPaymentOrderId ? (
-                    <PaymentQRModal
-                        token={token}
-                        orderId={awaitingPaymentOrderId}
-                        onClose={handleCloseToEdit}
-                        onBack={handleBackToEdit}
-                        onDoneViewOrders={() => navigate("/orders")}
-                    />
+                {redirecting ? (
+                    <div className="flex flex-col items-center px-6 py-16 text-center">
+                        <Loader2 className="h-9 w-9 animate-spin" style={{ color: C.secondary }} />
+                        <h2 className="mt-5 text-[18px] font-bold tracking-tight" style={{ color: C.ink }}>Taking you to JioPay…</h2>
+                        <p className="mt-1.5 max-w-xs text-[13px] font-medium leading-relaxed" style={{ color: C.muted }}>
+                            Please don't close or refresh this page. You'll be brought back here once the payment is done.
+                        </p>
+                    </div>
+                ) : pendingPay ? (
+                    <div className="flex flex-col items-center px-6 py-10 text-center">
+                        <span className="flex h-16 w-16 items-center justify-center rounded-full text-white shadow-lg" style={{ background: "linear-gradient(135deg, #d2462b 0%, #c71f11 100%)" }}>
+                            <CreditCard className="h-7 w-7" />
+                        </span>
+                        <h2 className="mt-5 text-[19px] font-bold tracking-tight" style={{ color: C.ink }}>Payment pending</h2>
+                        {pendingPay.orderNumber && (
+                            <p className="mt-1.5 rounded-full bg-[#FCFBF9] px-3 py-1 font-mono text-[12px] font-semibold" style={{ color: C.secondary }}>{pendingPay.orderNumber}</p>
+                        )}
+                        <p className="mt-3 max-w-sm text-[13px] font-medium leading-relaxed" style={{ color: C.muted }}>
+                            Your order is created but not paid yet. Pay now to confirm it, or edit the order first.
+                            If you already paid, give it a minute — you'll find it in your orders.
+                        </p>
+                        {error && <div className="mt-4 w-full"><Notice tone="danger">{error}</Notice></div>}
+                        <div className="mt-6 flex w-full flex-col gap-2.5">
+                            <button onClick={() => beginPayment(pendingPay.orderId, pendingPay.orderNumber)} disabled={submitting}
+                                className="flex w-full items-center justify-center gap-2 rounded-xl py-3 text-[14px] font-bold text-white shadow-sm disabled:opacity-60"
+                                style={{ background: "linear-gradient(135deg, #d2462b 0%, #c71f11 100%)" }}>
+                                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Pay now"}
+                            </button>
+                            <button onClick={handleEditOrder} disabled={submitting}
+                                className="w-full rounded-xl border py-3 text-[13.5px] font-bold disabled:opacity-60" style={{ borderColor: C.hair, color: C.ink }}>
+                                Edit order
+                            </button>
+                            <button onClick={onClose} disabled={submitting}
+                                className="w-full py-2 text-[12.5px] font-bold disabled:opacity-60" style={{ color: C.muted }}>
+                                Pay later from My orders
+                            </button>
+                        </div>
+                    </div>
                 ) : done ? (
-                    /* ---------------- Success state ---------------- */
                     <div className="flex flex-col items-center px-6 py-10 text-center">
                         <span className="flex h-16 w-16 items-center justify-center rounded-full text-white shadow-lg" style={{ background: "linear-gradient(135deg,#047084,#0B9FB8)" }}>
                             <CheckCircle2 className="h-8 w-8" />
@@ -948,7 +1196,7 @@ export default function BuyNowModal({ seller, product, onClose }) {
                         <h2 className="mt-5 text-[19px] font-bold tracking-tight" style={{ color: C.ink }}>
                             {done.orderType === "sample" ? "Sample requested" : done.paymentMethod === "credit" ? "Order placed on credit" : "Order placed"}
                         </h2>
-                        <p className="mt-1.5 rounded-full bg-slate-50 px-3 py-1 font-mono text-[12px] font-semibold" style={{ color: C.secondary }}>{done.orderNumber}</p>
+                        <p className="mt-1.5 rounded-full bg-[#FCFBF9] px-3 py-1 font-mono text-[12px] font-semibold" style={{ color: C.secondary }}>{done.orderNumber}</p>
                         <p className="mt-3 max-w-sm text-[13px] font-medium leading-relaxed" style={{ color: C.muted }}>{done.message}</p>
 
                         {done.estimatedDeliveryDate && (
@@ -956,13 +1204,11 @@ export default function BuyNowModal({ seller, product, onClose }) {
                                 <Calendar className="h-3.5 w-3.5" /> Estimated delivery {deliveryDateLabel(done.estimatedDeliveryDate)}
                             </p>
                         )}
-
                         {done.stockShortfall && (
                             <div className="mt-4 w-full">
                                 <Notice tone="warn">This item is short on stock right now — fulfilment may take a little longer than usual.</Notice>
                             </div>
                         )}
-
                         <div className="mt-7 flex w-full gap-2.5">
                             <button onClick={onClose} className="flex-1 rounded-xl border py-3 text-[13.5px] font-bold" style={{ borderColor: C.hair, color: C.ink }}>Keep browsing</button>
                             <button onClick={() => navigate("/orders")} className="flex-1 rounded-xl py-3 text-[13.5px] font-bold text-white shadow-sm" style={{ background: "linear-gradient(135deg, #d2462b 0%, #c71f11 100%)" }}>View orders</button>
@@ -971,7 +1217,6 @@ export default function BuyNowModal({ seller, product, onClose }) {
                 ) : access === undefined ? (
                     <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin" style={{ color: C.muted }} /></div>
                 ) : !access.canCheckout ? (
-                    /* ---------------- Access-gate state ---------------- */
                     <div className="flex flex-col items-center px-6 py-10 text-center">
                         <span className="flex h-16 w-16 items-center justify-center rounded-full text-white shadow-lg" style={{ background: "linear-gradient(135deg,#047084,#0B9FB8)" }}>
                             <Lock className="h-6 w-6" />
@@ -982,48 +1227,73 @@ export default function BuyNowModal({ seller, product, onClose }) {
                     </div>
                 ) : (
                     <>
-                        {/* ---------------- Header ---------------- */}
-                        <div className="flex shrink-0 items-start justify-between gap-3 border-b px-5 py-4 sm:px-6" style={{ borderColor: C.hairSoft }}>
-                            <div className="min-w-0">
-                                <p className="text-[11px] font-bold tracking-wider" style={{ color: C.secondary }}>Place order</p>
-                                <h2 className="mt-0.5 truncate text-[18px] font-bold tracking-wide" style={{ color: C.ink }}>{product?.name}</h2>
-                                <p className="truncate text-[12px] font-medium tracking-wide" style={{ color: C.muted }}>from {seller?.display_name}</p>
+                        {/* ============ 1. HEADER — what am I buying ============ */}
+                        <div className="shrink-0 border-b px-4 py-3.5 sm:px-5" style={{ borderColor: C.hairSoft }}>
+                            <div className="flex items-start gap-3">
+                                {/* Tappable image -> lightbox */}
+                                <button type="button" disabled={!heroImage} onClick={() => heroImage && setLightboxSrc(heroImage)}
+                                    aria-label="View product image"
+                                    className="relative flex h-20 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl"
+                                    style={{ background: "#F4F5F6", cursor: heroImage ? "zoom-in" : "default" }}>
+                                    {heroImage
+                                        ? <img src={resizedImageUrl(heroImage, { width: 256 })} alt="" referrerPolicy="no-referrer" className="h-full w-full object-cover" />
+                                        : <Package className="h-5 w-5" style={{ color: C.muted }} />}
+                                    {heroImage && (
+                                        <span className="absolute bottom-1 right-1 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-black/60 p-[3px] text-white">
+                                            <Maximize2 className="h-2.5 w-2.5" />
+                                        </span>
+                                    )}
+                                </button>
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-[10.5px] font-extrabold uppercase tracking-[0.08em]" style={{ color: C.secondary }}>Place order</p>
+                                    <h2 className="mt-0.5 line-clamp-2 text-[15.5px] font-extrabold leading-tight tracking-wide" style={{ color: C.ink }}>{productName}</h2>
+                                    {subLabel && (
+                                        <p className="mt-0.5 flex items-center gap-1.5 truncate text-[11.5px] font-bold uppercase tracking-wider" style={{ color: "#006F83" }}>
+                                            {brandImage && !brandNotApplicable && (
+                                                <img src={resizedImageUrl(brandImage, { width: 64 })} alt="" className="h-4 w-4 shrink-0 rounded object-cover" />
+                                            )}
+                                            <span className="truncate">{subLabel}</span>
+                                        </p>
+                                    )}
+                                    {categoryLabel && <p className="mt-0.5 truncate text-[10.5px] font-medium tracking-wide" style={{ color: C.muted }}>{categoryLabel}</p>}
+                                    <p className="mt-1 flex items-center gap-1 truncate text-[11.5px] font-semibold tracking-wide" style={{ color: C.muted }}>
+                                        <Store className="h-3 w-3 shrink-0" /> <span className="truncate">Sold by {seller?.display_name}{seller?.dispatchOrigin ? ` · ${seller.dispatchOrigin}` : ""}</span>
+                                    </p>
+                                </div>
+                                <div className="flex shrink-0 items-center gap-0.5">
+                                    <button
+                                        onClick={async () => {
+                                            const result = await shareProductLink({
+                                                submissionId: seller.offerId, productName: product?.name, sellerName: seller?.display_name,
+                                            });
+                                            if (result === "copied") setToast("Link copied!");
+                                        }}
+                                        aria-label="Share this seller's listing"
+                                        className="flex h-9 w-9 items-center justify-center rounded-full transition-colors duration-150 hover:bg-black/[0.05]">
+                                        <Share2 className="h-4 w-4" style={{ color: C.muted }} />
+                                    </button>
+                                    <button onClick={onClose} aria-label="Close"
+                                        className="flex h-9 w-9 items-center justify-center rounded-full transition-colors duration-150 hover:bg-black/[0.05]">
+                                        <X className="h-[18px] w-[18px]" style={{ color: C.muted }} />
+                                    </button>
+                                </div>
                             </div>
-                            <button
-                                onClick={async () => {
-                                    const result = await shareProductLink({
-                                        submissionId: seller.offerId,
-                                        productName: product?.name,
-                                        sellerName: seller?.display_name,
-                                    });
-                                    if (result === "copied") setToastMsg?.("Link copied!"); // or your own toast
-                                }}
-                                aria-label="Share this seller's listing"
-                                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors duration-150 hover:bg-black/[0.05]"
-                            >
-                                <Share2 className="h-4 w-4" style={{ color: C.muted }} />
-                            </button>
-                            <button onClick={onClose} aria-label="Close"
-                                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors duration-150 hover:bg-black/[0.05]">
-                                <X className="h-4.5 w-4.5" style={{ color: C.muted }} />
-                            </button>
                         </div>
 
-                        {/* ---------------- Scrollable body ---------------- */}
-                        <div className="flex-1 overflow-y-auto" data-lenis-prevent>
-                            <div className="flex flex-col gap-3 px-5 py-4 sm:px-6">
+                        {/* ============ BODY ============ */}
+                        <div className="flex-1 overflow-y-auto" data-lenis-prevent
+                            onWheel={stopScrollPropagation} onTouchStart={stopScrollPropagation} onTouchMove={stopScrollPropagation}>
+                            <div className="flex flex-col gap-3 px-4 py-4 sm:px-5">
 
-                                {/* Order type toggle — clearer selected state, sits like a
-                                    segmented control instead of two loosely-grouped pills. */}
                                 {canSample && (
-                                    <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
-                                        {[
-                                            { v: "standard", t: "Standard order" },
-                                            { v: "sample", t: "Order a sample", icon: Beaker },
-                                        ].map(({ v, t, icon: Icon }) => (
-                                            <button key={v} type="button" onClick={() => setOrderMode(v)}
-                                                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2.5 text-[13px] font-bold transition-all tracking-wide duration-150"
-                                                style={orderMode === v
+                                    <div className="flex gap-1 rounded-xl bg-[#FCFBF9] p-1">
+                                        {[{ v: "standard", t: "Standard order" }, { v: "sample", t: "Order a sample", icon: Beaker }].map(({ v, t, icon: Icon }) => (
+                                            <button key={v} type="button"
+                                                // Leaving sample mode returns to the buyer's payment method
+                                                // (credit by default when approved, otherwise Pay now).
+                                                onClick={() => setOrderMode(v === "sample" ? "sample" : standardPayMode())}
+                                                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2.5 text-[13px] font-bold tracking-wide transition-all duration-150"
+                                                style={(v === "sample" ? isSample : !isSample)
                                                     ? { background: "#fff", color: v === "sample" ? "#D2462B" : C.secondary, boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }
                                                     : { color: C.muted }}>
                                                 {Icon && <Icon className="h-3.5 w-3.5" />} {t}
@@ -1037,15 +1307,27 @@ export default function BuyNowModal({ seller, product, onClose }) {
                                     </p>
                                 )}
 
-                                {/* ---------------- Quantity ---------------- */}
-                                <Panel icon={Package} title="Quantity" subtitle={!isSample ? `MOQ ${minQuantity} ${moqUnitLabel}${minQuantity === 1 ? "" : "s"}` : undefined}>
-                                    {!isSample && Number(seller?.packSize) > 0 && (
-                                        <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2">
+                                {(qtyNotice || error) && (
+                                    <div className="mb-2.5 flex flex-col gap-2">
+                                        {deferPriceUntilConfirmed && quoteFailed && !quote && (
+                                            <Notice tone="danger">Couldn't load the latest price. Change the quantity or reopen this link to retry.</Notice>
+                                        )}
+                                        {qtyNotice && <Notice tone="danger">{qtyNotice}</Notice>}
+                                        {error && <Notice tone="danger">{error}</Notice>}
+                                    </div>
+                                )}
+                                {!windowStatus.open && windowStatus.message && (
+                                    <div className="mb-1"><Notice tone="warn">{windowStatus.message}</Notice></div>
+                                )}
+
+                                {/* ============ 2. QUANTITY (rules + summary; the stepper lives in the footer) ============ */}
+                                <Card icon={Package} title="Quantity" right={!isSample ? (
+                                    <span className="text-[11px] font-bold tracking-wide" style={{ color: C.muted }}>MOQ {minQuantity} {moqUnitLabel}{minQuantity === 1 ? "" : "s"}</span>
+                                ) : null}>
+                                    {!isSample && packagingLine && (
+                                        <div className="flex items-center gap-2 rounded-lg bg-[#FCFBF9] px-3 py-2">
                                             <Boxes className="h-3.5 w-3.5 shrink-0" style={{ color: C.secondary }} />
-                                            <p className="text-[12px] font-semibold tracking-wide" style={{ color: C.ink }}>
-                                                1 pack = {seller.packSize} {seller.unit}
-                                                {Number(seller?.masterPackSize) >= 1 && ` · 1 master pack = ${seller.masterPackSize} packs`}
-                                            </p>
+                                            <p className="text-[12px] font-semibold tracking-wide" style={{ color: C.ink }}>{packagingLine}</p>
                                         </div>
                                     )}
 
@@ -1054,7 +1336,7 @@ export default function BuyNowModal({ seller, product, onClose }) {
                                     )}
 
                                     {isSample ? (
-                                        <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3.5 py-3">
+                                        <div className="flex items-center justify-between rounded-xl bg-[#FCFBF9] px-3.5 py-3">
                                             <span className="text-[16px] font-extrabold tabular-nums" style={{ color: C.ink }}>
                                                 {quantity} {seller?.unit}
                                                 {Number(seller?.packSize) > 0 && (
@@ -1066,38 +1348,20 @@ export default function BuyNowModal({ seller, product, onClose }) {
                                             <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold" style={{ color: C.muted }}>Fixed by seller</span>
                                         </div>
                                     ) : (
-                                        <div className="flex items-center gap-3">
-                                            <Stepper value={quantity} onChange={setQuantity} min={minQuantity} max={maxQuantity} />
-
-                                            {/* FIX: was repeating "{quantity} {basisLabel}" right next to a
-            stepper that already shows the quantity in its own input —
-            e.g. input showed "23" and this text also said "23 master
-            pack(s)". Now this only shows the unit label + the actual
-            base-unit conversion, never the quantity itself again. */}
-                                            <p className="text-[12.5px] capitalize font-medium leading-snug tracking-wide" style={{ color: C.muted }}>
-                                                {basisLabel}
+                                        <div className="flex items-center justify-between gap-3 rounded-xl bg-[#FCFBF9] px-3.5 py-3">
+                                            <p className="min-w-0 text-[13.5px] font-extrabold tabular-nums tracking-wide capitalize" style={{ color: C.ink }}>
+                                                {quantity || 0} {basisLabel}
                                                 {Number(seller?.packSize) > 0 && (
-                                                    <span className="block text-[11.5px] tracking-wide" style={{ color: C.muted }}>
+                                                    <span className="ml-1.5 text-[11.5px] font-semibold normal-case" style={{ color: C.muted }}>
                                                         = {toBaseUnits(seller, Number(quantity) || 0, basis)} {seller?.unit}
                                                     </span>
                                                 )}
                                             </p>
+                                            <span className="shrink-0 text-[10.5px] font-bold tracking-wide" style={{ color: C.muted }}>Adjust below ↓</span>
                                         </div>
                                     )}
 
-                                    {!isSample && quote && quote.meetsMoq === false && (
-                                        <Notice tone="danger">Below the seller's MOQ of {formatMoqForBasis(quote.moq, seller)}.</Notice>
-                                    )}
-                                    {!isSample && outOfStock && (
-                                        <Notice tone="danger">This item is currently out of stock with this seller.</Notice>
-                                    )}
-                                    {!isSample && !outOfStock && exceedsStock && (
-                                        <Notice tone="danger">
-                                            You can order at most {maxQuantity} {saleUnitLabel(seller?.masterPackSize)}{Number(maxQuantity) === 1 ? "" : "s"} from this seller. Please reduce the quantity.
-                                        </Notice>
-                                    )}
-
-                                    {!isSample && Array.isArray(seller?.priceSlabs) && seller.priceSlabs.length > 0 && (
+                                    {!isSample && !priceLoading && Array.isArray(seller?.priceSlabs) && seller.priceSlabs.length > 0 && (
                                         <div className="flex flex-col gap-1.5">
                                             <span className="flex items-center gap-1.5 text-[12px] font-bold" style={{ color: C.ink }}>
                                                 <Layers className="h-3.5 w-3.5" style={{ color: C.secondary }} /> Price slabs
@@ -1108,7 +1372,7 @@ export default function BuyNowModal({ seller, product, onClose }) {
                                                     return (
                                                         <span key={i} className="rounded-full border px-2.5 py-1 text-[11.5px] font-bold"
                                                             style={active ? { borderColor: C.secondary, background: `${C.secondary}14`, color: C.secondary } : { borderColor: C.hair, color: C.muted }}>
-                                                            {slab.minQty}{slab.maxQty ? `–${slab.maxQty}` : "+"} pack{Number(slab.maxQty || slab.minQty) === 1 ? "" : "s"}: ₹{inr(slab.price)}
+                                                            {slab.minQty}{slab.maxQty ? `–${slab.maxQty}` : "+"} {moqUnitLabel.toLowerCase()}{Number(slab.maxQty || slab.minQty) === 1 ? "" : "s"}: ₹{inr(slab.price)}
                                                         </span>
                                                     );
                                                 })}
@@ -1116,7 +1380,7 @@ export default function BuyNowModal({ seller, product, onClose }) {
                                         </div>
                                     )}
 
-                                    {!isSample && Array.isArray(seller?.quantityDiscounts) && seller.quantityDiscounts.length > 0 && (
+                                    {!isSample && !priceLoading && Array.isArray(seller?.quantityDiscounts) && seller.quantityDiscounts.length > 0 && (
                                         <div className="flex flex-col gap-1.5">
                                             <span className="flex items-center gap-1.5 text-[12px] font-bold" style={{ color: C.ink }}>
                                                 <Layers className="h-3.5 w-3.5" style={{ color: "#D2462B" }} /> Quantity discounts
@@ -1135,156 +1399,154 @@ export default function BuyNowModal({ seller, product, onClose }) {
                                             </div>
                                         </div>
                                     )}
-                                </Panel>
+                                </Card>
 
-                                {/* ---------------- Shipping address ---------------- */}
-                                <Panel icon={MapPin} title="Shipping address">
-                                    {!showNewAddress && addresses.length > 0 && (
-                                        <div className="flex flex-col gap-2">
-                                            {addresses.map((a) => {
-                                                const addrLocationStatus = checkLocationServiceable(constraints?.dispatchingLocations, { state: a.state, city: a.city });
-                                                const isSelected = selectedAddressId === a.id;
-                                                const isUndeliverable = !!constraints && !addrLocationStatus.serviceable;
-                                                return (
-                                                    <button key={a.id} type="button" onClick={() => setSelectedAddressId(a.id)}
-                                                        className="flex items-start gap-3 rounded-xl border p-3 text-left transition-colors duration-150"
-                                                        style={{
-                                                            borderColor: isUndeliverable ? "#B3261E" : (isSelected ? C.secondary : C.hair),
-                                                            background: isUndeliverable ? "#FDECEC" : (isSelected ? `${C.secondary}08` : "#fff"),
-                                                        }}>
-                                                        <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2"
-                                                            style={{ borderColor: isUndeliverable ? "#B3261E" : (isSelected ? C.secondary : C.hair) }}>
-                                                            {isSelected && <span className="h-2 w-2 rounded-full" style={{ background: isUndeliverable ? "#B3261E" : C.secondary }} />}
-                                                        </span>
-                                                        <div className="min-w-0">
-                                                            <p className="text-[13px] font-bold tracking-wide" style={{ color: C.ink }}>{a.label} · {a.contact_name}</p>
-                                                            <p className="mt-0.5 text-[12px] font-medium leading-snug tracking-wide" style={{ color: isUndeliverable ? "#B3261E" : C.muted }}>
-                                                                {a.address_line1}, {a.city}, {a.state} – {a.pincode}
-                                                            </p>
-                                                        </div>
-                                                    </button>
-                                                );
-                                            })}
-                                            <button type="button" onClick={() => setShowNewAddress(true)}
-                                                className="flex w-fit items-center gap-1.5 rounded-lg px-1 py-1.5 text-[12.5px] font-bold" style={{ color: C.secondary }}>
-                                                <Plus className="h-3.5 w-3.5" /> Add a new address
-                                            </button>
+                                {/* ============ 3. PRICE SUMMARY ============ */}
+                                <Card icon={ReceiptText} title="Price summary">
+                                    {priceLoading ? (
+                                        <div className="flex flex-col gap-2.5 rounded-xl bg-[#FCFBF9] p-3.5">
+                                            <SkeletonBar width="45%" />
+                                            <SkeletonBar width="30%" />
+                                            <div className="h-px" style={{ background: C.hair }} />
+                                            <SkeletonBar width="80%" />
+                                            <SkeletonBar width="60%" />
                                         </div>
-                                    )}
-
-                                    {showNewAddress && (
-                                        <div className="flex flex-col gap-2.5">
-                                            <div className="grid grid-cols-2 gap-2.5">
-                                                <TextField dense label="Contact name" value={newAddress.contact_name} onChange={(v) => setAddrField("contact_name", v)} />
-                                                <TextField dense label="Phone" value={newAddress.contact_phone} onChange={(v) => setAddrField("contact_phone", v)} />
-                                            </div>
-                                            <TextField dense label="Address line 1" value={newAddress.address_line1} onChange={(v) => setAddrField("address_line1", v)} />
-                                            <TextField dense label="Address line 2 (optional)" value={newAddress.address_line2} onChange={(v) => setAddrField("address_line2", v)} />
-                                            <div className="flex flex-col gap-2.5">
-                                                <TextField
-                                                    dense
-                                                    label="Pincode"
-                                                    value={newAddress.pincode}
-                                                    onChange={(v) => {
-                                                        const digits = v.replace(/\D/g, "").slice(0, 6);
-                                                        setNewAddress((a) => ({ ...a, pincode: digits, city: "", state: "" }));
-                                                    }}
-                                                    // Just a red ring on the input itself — no separate message box here.
-                                                    style={
-                                                        pincodeStatus === "ok" && constraints && !locationStatus.serviceable
-                                                            ? { borderColor: "#B3261E", boxShadow: "0 0 0 1px #B3261E33" }
-                                                            : undefined
-                                                    }
-                                                />
-
-                                                {pincodeStatus === "loading" && (
-                                                    <p className="text-[11.5px] font-medium" style={{ color: C.muted }}>Looking up location…</p>
-                                                )}
-
-                                                {pincodeStatus === "error" && (
-                                                    <p className="text-[11.5px] font-medium" style={{ color: "#B3261E" }}>{pincodeMessage}</p>
-                                                )}
-
-                                                {pincodeStatus === "ok" && newAddress.city && (
-                                                    <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2.5">
-                                                        <MapPin className="h-3.5 w-3.5 shrink-0" style={{ color: C.secondary }} />
-                                                        <p className="text-[13px] font-semibold tracking-wide" style={{ color: C.ink }}>
-                                                            {newAddress.city}, {newAddress.state}
-                                                        </p>
-                                                    </div>
+                                    ) : quote ? (
+                                        <div className="flex flex-col gap-2.5 rounded-xl bg-[#FCFBF9] p-3.5">
+                                            <div className="flex items-baseline justify-between gap-2 tracking-wide">
+                                                <span className="text-[14px] font-bold" style={{ color: C.ink }}>
+                                                    ₹{inr(quote.basePriceApplied ?? quote.unitPrice)}{" "}
+                                                    <span className="font-medium" style={{ color: C.muted }}>/ {isSample ? seller?.unit : saleUnitLabel(seller?.masterPackSize)}</span>
+                                                </span>
+                                                {!isSample && Number(seller?.packSize) > 0 && (
+                                                    <span className="shrink-0 text-[11px] font-medium tabular-nums" style={{ color: C.muted }}>
+                                                        ≈ ₹{inr((quote.basePriceApplied ?? quote.unitPrice) / saleUnitQtyToBaseUnits(1, seller.packSize, seller.masterPackSize))} / {seller?.unit}
+                                                    </span>
                                                 )}
                                             </div>
-                                            {addresses.length > 0 && (
-                                                <button type="button" onClick={() => setShowNewAddress(false)} className="w-fit text-[12.5px] font-bold" style={{ color: C.muted }}>
-                                                    Use a saved address instead
-                                                </button>
+                                            <p className="text-[11.5px] font-semibold tracking-wide" style={{ color: C.muted }}>
+                                                {isSample
+                                                    ? `${quote.baseUnitQuantity} ${seller?.unit}`
+                                                    : `${quote.saleUnitQuantity} ${saleUnitLabel(seller?.masterPackSize)}${quote.saleUnitQuantity === 1 ? "" : "s"}${Number(seller?.packSize) > 0 ? ` · ${saleUnitQtyToBaseUnits(quote.saleUnitQuantity, seller.packSize, seller.masterPackSize)} ${seller?.unit}` : ""}`}
+                                            </p>
+                                            <div className="h-px" style={{ background: C.hair }} />
+                                            <QuoteRow label="Subtotal" value={`₹${inr(quote.grossSubtotal)}`} tone={C.ink} small />
+                                            {!isSample && quote.discountAmount > 0 && (
+                                                <QuoteRow label={`Discount (${quote.discountPercent}% off)`} value={`− ₹${inr(quote.discountAmount)}`} tone={C.secondary} small />
                                             )}
-                                            <button
-                                                type="button"
-                                                onClick={async () => {
-                                                    const id = await handleSaveNewAddress();
-                                                    if (id) setShowNewAddress(false); // handleSaveNewAddress already does this, but be explicit
-                                                }}
-                                                className="w-fit rounded-lg px-3 py-1.5 text-[12.5px] font-bold text-white"
-                                                style={{ background: C.secondary }}
-                                            >
-                                                Save address
-                                            </button>
+                                            <div className="h-px" style={{ background: C.hair }} />
+                                            <div className="flex items-center justify-between tracking-wide">
+                                                <span className="text-[13.5px] font-bold" style={{ color: C.ink }}>{isSample ? "Total payable (sample)" : "Total payable"}</span>
+                                                <span className="text-[20px] font-extrabold tabular-nums" style={{ color: C.ink }}>₹{inr(quote.subtotal)}</span>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <p className="text-[12.5px] font-medium" style={{ color: C.muted }}>Enter a quantity to see the total.</p>
+                                    )}
+
+                                    {/* Pay now / Pay on credit — only for buyers already approved for credit.
+                                        "Pay on credit" is pre-selected for them; the choice is theirs to change. */}
+                                    {!isSample && canBuyOnCredit && (
+                                        <div className="flex flex-col gap-2">
+                                            <div className="flex gap-1 rounded-xl bg-[#FCFBF9] p-1">
+                                                {[{ v: "standard", t: "Pay now" }, { v: "credit", t: "Pay on credit", icon: CreditCard }].map(({ v, t, icon: Icon }) => (
+                                                    <button key={v} type="button" onClick={() => pickPayMode(v)}
+                                                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-[12.5px] font-bold tracking-wide transition-all duration-150"
+                                                        style={orderMode === v
+                                                            ? { background: "#fff", color: v === "credit" ? "#7c3aed" : C.secondary, boxShadow: "0 1px 3px rgba(0,0,0,0.08)" }
+                                                            : { color: C.muted }}>
+                                                        {Icon && <Icon className="h-3.5 w-3.5" />} {t}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            {isCredit && (
+                                                <p className="px-1 text-[11.5px] font-semibold tracking-wide" style={{ color: C.muted }}>
+                                                    Credit available: ₹{inr(creditRemaining)}
+                                                </p>
+                                            )}
+                                            {crossesCreditLimit && (
+                                                limitIncreasePending ? (
+                                                    <Notice tone="info">You've asked {seller.display_name} for a higher credit limit — waiting for their response.</Notice>
+                                                ) : limitIncreaseCooldownActive ? (
+                                                    <Notice tone="warn">This order is above your remaining credit. Your last request was declined — you can ask again after {fmtDate(creditStatus.limit_increase_cooldown_until)}.</Notice>
+                                                ) : (
+                                                    <>
+                                                        <Notice tone="warn">This order is above your remaining credit limit.</Notice>
+                                                        <button type="button" onClick={handleRequestCreditIncrease} disabled={requestingIncrease}
+                                                            className="flex w-full items-center justify-center gap-1.5 rounded-xl border px-4 py-2.5 text-[13px] font-bold disabled:opacity-50"
+                                                            style={{ borderColor: "#7c3aed40", color: "#7c3aed", background: "#7c3aed08" }}>
+                                                            <CreditCard className="h-3.5 w-3.5" /> {requestingIncrease ? "Requesting…" : "Ask for a higher credit limit"}
+                                                        </button>
+                                                    </>
+                                                )
+                                            )}
                                         </div>
                                     )}
+                                </Card>
+
+                                {/* ============ 4. DELIVERY ============ */}
+                                <Card icon={MapPin} title="Delivery">
+                                    <AddressBook ref={addressBookRef} disabled={submitting} />
+
+                                    {blockedByConstraints && <Notice tone="danger">{locationStatus.message}</Notice>}
+
                                     <div className="flex flex-col gap-2 rounded-xl border px-3.5 py-3" style={{ borderColor: C.hairSoft }}>
                                         <div className="flex items-center justify-between gap-2">
-                                            <p className="text-[11px] font-bold tracking-wider" style={{ color: C.muted }}>Preferred transport</p>
-                                            <button type="button" onClick={() => setShowTransportModal(true)} className="shrink-0 text-[12px] font-bold tracking-wide" style={{ color: C.secondary }}>
-                                                {transportPreference || pendingTransportProposal ? "Change" : "Set preference"}
+                                            <p className="flex items-center gap-1.5 text-[11px] font-bold tracking-wider" style={{ color: C.muted }}>
+                                                <Truck className="h-3.5 w-3.5" /> Preferred transport
+                                            </p>
+                                            <button type="button" onClick={() => { autoPlaceRef.current = false; setShowTransportModal(true); }}
+                                                disabled={!selectedAddressId}
+                                                className="shrink-0 text-[12px] font-bold tracking-wide disabled:opacity-40" style={{ color: C.secondary }}>
+                                                {transportPreference || pendingTransportProposal ? "Change" : "Select"}
                                             </button>
                                         </div>
 
                                         {transportPreference ? (
                                             <div className="flex flex-col gap-1.5">
-                                                <p className="text-[13px] font-bold tracking-wide" style={{ color: C.ink }}>
-                                                    {routeTransportModeLabel(transportPreference.mode)}
-                                                </p>
-                                                <div className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
-                                                    {getRouteTransportFields(transportPreference.mode).map((f) => {
-                                                        const val = transportPreference.fields?.[f.key];
-                                                        if (!val) return null;
-                                                        const displayLabel = f.label.replace(/\s*\(if any\)\s*/i, "");
-                                                        return (
-                                                            <div key={f.key} className="flex items-baseline gap-1.5">
-                                                                <span className="shrink-0 text-[11px] font-semibold tracking-wide" style={{ color: C.muted }}>{displayLabel}:</span>
-                                                                <span className="truncate text-[12.5px] font-bold tracking-wide" style={{ color: C.ink }}>{val}</span>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
+                                                <p className="text-[13px] font-bold tracking-wide" style={{ color: C.ink }}>{routeTransportModeLabel(transportPreference.mode)}</p>
+                                                <TransportFields mode={transportPreference.mode} fields={transportPreference.fields} />
                                             </div>
                                         ) : pendingTransportProposal ? (
                                             <div className="flex flex-col gap-1.5">
-                                                <p className="text-[13px] font-bold tracking-wide" style={{ color: C.ink }}>
-                                                    {routeTransportModeLabel(pendingTransportProposal.mode)}
-                                                </p>
-                                                <div className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
-                                                    {getRouteTransportFields(pendingTransportProposal.mode).map((f) => {
-                                                        const val = pendingTransportProposal.fields?.[f.key];
-                                                        if (!val) return null;
-                                                        const displayLabel = f.label.replace(/\s*\(if any\)\s*/i, "");
-                                                        return (
-                                                            <div key={f.key} className="flex items-baseline gap-1.5">
-                                                                <span className="shrink-0 text-[11px] font-semibold tracking-wide" style={{ color: C.muted }}>{displayLabel}:</span>
-                                                                <span className="truncate text-[12.5px] font-bold tracking-wide" style={{ color: C.ink }}>{val}</span>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
+                                                <p className="text-[13px] font-bold tracking-wide" style={{ color: C.ink }}>{routeTransportModeLabel(pendingTransportProposal.mode)}</p>
+                                                <TransportFields mode={pendingTransportProposal.mode} fields={pendingTransportProposal.fields} />
                                                 <Notice tone="warn">
-                                                    Your proposed transport option is still awaiting the seller's approval. If you place the order now, it'll go through the same as "No preference set" — the seller will choose the transport for now.
+                                                    Waiting for {seller?.display_name}'s approval. You can place the order once it's approved, or pick a different, already-approved option.
                                                 </Notice>
                                             </div>
                                         ) : (
-                                            <p className="text-[12px] font-medium tracking-wide" style={{ color: C.muted }}>No preference set — the seller will choose for you.</p>
+                                            <p className="text-[12px] font-semibold tracking-wide" style={{ color: C.muted }}>
+                                                Not selected yet — we'll ask when you tap "{verb}".
+                                            </p>
                                         )}
+                                        {transportRemovedNotice && <Notice tone="warn">{transportRemovedNotice}</Notice>}
                                     </div>
+
+                                    {!blockedByConstraints && quote && (
+                                        <div className="flex flex-col gap-2 rounded-xl bg-[#FCFBF9] p-3.5">
+                                            <div className="flex items-center gap-2.5">
+                                                <Truck className="h-4 w-4 shrink-0" style={{ color: C.secondary }} />
+                                                <div className="min-w-0 flex-1">
+                                                    <span className="text-[11px] font-bold tracking-wider" style={{ color: C.muted }}>Estimated delivery</span>
+                                                    <p className="text-[13.5px] font-bold tracking-wide" style={{ color: C.ink }}>
+                                                        {quote.isEstimate || !quote.estimatedDeliveryDate ? <SkeletonBar width="100px" /> : deliveryDateLabel(quote.estimatedDeliveryDate)}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            {!quote.isEstimate && (quote.acceptanceDelayDays > 0 || quote.leadDays > 0 || quote.transitDaysMin != null) && (
+                                                <div className="border-t pt-2" style={{ borderColor: C.hair }}>
+                                                    {quote.acceptanceDelayDays > 0 && <QuoteRow small label="Acceptance delay" value={`${quote.acceptanceDelayDays} day${quote.acceptanceDelayDays === 1 ? "" : "s"}`} />}
+                                                    {quote.leadDays > 0 && <QuoteRow small label={seller?.stockType === "made_to_order" ? "Production time" : "Dispatch time"} value={`${quote.leadDays} day${quote.leadDays === 1 ? "" : "s"}`} />}
+                                                    {quote.transitDaysMin != null && (
+                                                        <QuoteRow small label="Transit" value={quote.transitDaysMin === quote.transitDaysMax
+                                                            ? `${quote.transitDaysMin} day${quote.transitDaysMin === 1 ? "" : "s"}`
+                                                            : `${quote.transitDaysMin}–${quote.transitDaysMax} days`} />
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
 
                                     <div className="flex flex-col gap-1 border-t pt-3" style={{ borderColor: C.hairSoft }}>
                                         <Label>Note to seller (optional)</Label>
@@ -1292,281 +1554,252 @@ export default function BuyNowModal({ seller, product, onClose }) {
                                             className="w-full resize-none rounded-lg border bg-white px-3 py-2.5 text-[13.5px] font-medium placeholder:text-slate-300 focus:outline-none focus:ring-2"
                                             style={{ borderColor: C.hair, color: C.ink, ["--tw-ring-color"]: `${C.secondary}22` }} />
                                     </div>
-                                </Panel>
+                                </Card>
 
-                                {/* ---------------- Quote breakdown ---------------- */}
-                                <Panel icon={ReceiptText} title="Price breakdown">
-                                    {quote ? (
-                                        <>
-                                            <div className="flex items-center gap-3 rounded-xl border px-3.5 py-3" style={{ borderColor: C.hair }}>
-                                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={{ background: `${C.secondary}12` }}>
-                                                    <Boxes className="h-4 w-4" style={{ color: C.secondary }} />
-                                                </span>
-                                                <div className="min-w-0 flex-1">
-                                                    {isSample ? (
-                                                        <p className="text-[14px] font-extrabold tabular-nums" style={{ color: C.ink }}>
-                                                            {quote.baseUnitQuantity} {seller?.unit}
-                                                        </p>
-                                                    ) : (
-                                                        <p className="text-[14px] font-extrabold tabular-nums tracking-wide" style={{ color: C.ink }}>
-                                                            {quote.saleUnitQuantity} {saleUnitLabel(seller?.masterPackSize)}{quote.saleUnitQuantity === 1 ? "" : "s"}
-                                                            {Number(seller?.packSize) > 0 && (
-                                                                <span className="font-semibold" style={{ color: C.muted }}>
-                                                                    {" "}· {saleUnitQtyToBaseUnits(quote.saleUnitQuantity, seller.packSize, seller.masterPackSize)} {seller?.unit}
-                                                                </span>
-                                                            )}
-                                                        </p>
-                                                    )}
-                                                    {!isSample && basis === "per_master_pack" && (
-                                                        <p className="text-[11px] font-medium tracking-wider" style={{ color: C.muted }}>
-                                                            {quantity} master pack{Number(quantity) === 1 ? "" : "s"} selected
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            <div className="flex flex-col gap-2.5 rounded-xl bg-slate-50 p-3.5">
-                                                <span className="text-[11.5px] font-bold tracking-wider" style={{ color: C.muted }}>Rate applied</span>
-
-                                                <div className="flex items-baseline justify-between gap-2 tracking-wide">
-                                                    <span className="text-[14px] font-bold" style={{ color: C.ink }}>
-                                                        ₹{inr(quote.basePriceApplied ?? quote.unitPrice)}{" "}
-                                                        <span className="font-medium" style={{ color: C.muted }}>/ {isSample ? seller?.unit : saleUnitLabel(seller?.masterPackSize)}</span>
-                                                    </span>
-                                                    {!isSample && Number(seller?.packSize) > 0 && (
-                                                        <span className="shrink-0 text-[11px] font-medium tabular-nums" style={{ color: C.muted }}>
-                                                            ≈ ₹{inr((quote.basePriceApplied ?? quote.unitPrice) / saleUnitQtyToBaseUnits(1, seller.packSize, seller.masterPackSize))} / {seller?.unit}
-                                                        </span>
-                                                    )}
-                                                </div>
-
-                                                <div className="h-px" style={{ background: C.hair }} />
-
-                                                <QuoteRow label="Subtotal" value={`₹${inr(quote.grossSubtotal)}`} tone={C.ink} small />
-                                                {!isSample && quote.discountAmount > 0 && (
-                                                    <QuoteRow label={`Discount (${quote.discountPercent}% off)`} value={`− ₹${inr(quote.discountAmount)}`} tone={C.secondary} small />
-                                                )}
-
-                                                <div className="h-px" style={{ background: C.hair }} />
-
-                                                <div className="flex items-center justify-between tracking-wide">
-                                                    <span className="text-[13.5px] font-bold" style={{ color: C.ink }}>
-                                                        {isSample ? "Total payable (sample)" : "Total payable"}
-                                                    </span>
-                                                    <span className="text-[20px] font-extrabold tabular-nums" style={{ color: C.ink }}>₹{inr(quote.subtotal)}</span>
-                                                </div>
-                                            </div>
-
-                                            {!blockedByConstraints && (
-                                                <>
-                                                    {!isSample && quote.acceptanceDelayDays > 0 && (
-                                                        <Notice tone="warn">
-                                                            {quote.acceptanceMessage || "This seller is currently closed — your order will still be placed, but acceptance is delayed."}
-                                                        </Notice>
-                                                    )}
-
-                                                    <div className="flex flex-col gap-2 rounded-xl bg-slate-50 p-3.5">
-                                                        <span className="text-[11.5px] font-bold tracking-wider" style={{ color: C.muted }}>Delivery estimate</span>
-
-                                                        {quote.acceptanceDelayDays > 0 && (
-                                                            <QuoteRow small label="Acceptance delay" value={`${quote.acceptanceDelayDays} day${quote.acceptanceDelayDays === 1 ? "" : "s"}`} />
-                                                        )}
-                                                        {quote.leadDays > 0 && (
-                                                            <QuoteRow small label={seller?.stockType === "made_to_order" ? "Production time" : "Dispatch time"} value={`${quote.leadDays} day${quote.leadDays === 1 ? "" : "s"}`} />
-                                                        )}
-                                                        <QuoteRow
-                                                            small
-                                                            label="Transit"
-                                                            value={quote.transitDaysMin === quote.transitDaysMax
-                                                                ? `${quote.transitDaysMin} day${quote.transitDaysMin === 1 ? "" : "s"}`
-                                                                : `${quote.transitDaysMin}–${quote.transitDaysMax} days`}
-                                                        />
-
-                                                        <div className="h-px" style={{ background: C.hair }} />
-
-                                                        <div className="flex items-center gap-2.5">
-                                                            <Truck className="h-4 w-4 shrink-0" style={{ color: C.secondary }} />
-                                                            <div className="min-w-0 flex-1">
-                                                                <span className="text-[11px] font-bold tracking-wider" style={{ color: C.muted }}>Estimated delivery</span>
-                                                                <p className="text-[13.5px] font-bold tracking-wide" style={{ color: C.ink }}>
-                                                                    {quote.isEstimate || !quote.estimatedDeliveryDate ? <SkeletonBar width="100px" /> : deliveryDateLabel(quote.estimatedDeliveryDate)}
-                                                                </p>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </>
-                                            )}
-                                        </>
-                                    ) : (
-                                        <p className="text-[12.5px] font-medium" style={{ color: C.muted }}>Enter a quantity to see the total.</p>
-                                    )}
-                                </Panel>
-
-                                {/* ---------------- Seller terms (collapsible, quieter) ---------------- */}
+                                {/* ============ 5. DETAILS (both closed by default) ============ */}
                                 {hasTerms && (
-                                    <details className="group rounded-2xl border bg-white p-4 sm:p-4.5" style={{ borderColor: C.hairSoft }}>
-                                        <summary className="flex cursor-pointer list-none items-center justify-between gap-2">
-                                            <span className="flex items-center gap-2">
-                                                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" style={{ background: `${C.secondary}12` }}>
-                                                    <FileText className="h-3.5 w-3.5" style={{ color: C.secondary }} />
-                                                </span>
-                                                <span className="text-[14px] font-bold" style={{ color: C.ink }}>Seller terms</span>
-                                            </span>
-                                            <ChevronDown className="h-4 w-4 shrink-0 transition-transform duration-200 group-open:rotate-180" style={{ color: C.muted }} />
-                                        </summary>
-                                        <div className="mt-3 flex flex-col gap-2 border-t pt-3 text-[13px] font-medium" style={{ borderColor: C.hairSoft }}>
-                                            {seller.deliveryTimeline && <div className="flex justify-between gap-3"><span style={{ color: C.muted }}>Delivery</span><span style={{ color: C.ink, fontWeight: 700 }} className="text-right">{seller.deliveryTimeline}</span></div>}
-                                            {seller.paymentTerms && <div className="flex justify-between gap-3"><span style={{ color: C.muted }}>Payment</span><span style={{ color: C.ink, fontWeight: 700 }} className="text-right">{seller.paymentTerms}</span></div>}
-                                            {seller.returnPolicy && <div className="flex justify-between gap-3"><span style={{ color: C.muted }}>Returns</span><span style={{ color: C.ink, fontWeight: 700 }} className="text-right">{seller.returnPolicy}</span></div>}
-                                            {seller.warranty && <div className="flex justify-between gap-3"><span style={{ color: C.muted }}>Warranty</span><span style={{ color: C.ink, fontWeight: 700 }} className="text-right">{seller.warranty}</span></div>}
-                                            {seller.dispatchOrigin && <div className="flex justify-between gap-3"><span style={{ color: C.muted }}>Ships from</span><span style={{ color: C.ink, fontWeight: 700 }} className="text-right">{seller.dispatchOrigin}</span></div>}
-                                            {seller.freightIncluded != null && (
-                                                <div className="flex justify-between gap-3">
-                                                    <span style={{ color: C.muted }}>Freight</span>
-                                                    <span style={{ color: seller.freightIncluded ? C.secondary : C.ink, fontWeight: 700 }} className="text-right">
-                                                        {seller.freightIncluded ? "Included in price" : "Extra, paid by buyer"}
-                                                    </span>
-                                                </div>
-                                            )}
+                                    <Collapse icon={FileText} title="Seller terms">
+                                        <div className="flex flex-col">
+                                            <Fact label="Delivery" value={seller.deliveryTimeline} />
+                                            <Fact label="Payment" value={seller.paymentTerms} />
+                                            <Fact label="Returns" value={seller.returnPolicy} />
+                                            <Fact label="Warranty" value={seller.warranty} />
+                                            <Fact label="Ships from" value={seller.dispatchOrigin} />
+                                            {seller.freightIncluded != null && <Fact label="Freight" value={seller.freightIncluded ? "Included in price" : "Extra, paid by buyer"} />}
                                         </div>
-                                    </details>
+                                    </Collapse>
                                 )}
 
-                                {error && <Notice tone="danger">{error}</Notice>}
+                                {(hasProductDetails || (product?.id && !detail)) && (
+                                    <Collapse icon={Info} title="Product details">
+                                        {!detail && product?.id ? (
+                                            <div className="flex flex-col gap-2">
+                                                <SkeletonBar width="60%" /><SkeletonBar width="90%" /><SkeletonBar width="75%" />
+                                            </div>
+                                        ) : (
+                                            <div className="flex flex-col gap-3.5">
+                                                {galleryImages.length > 1 && (
+                                                    <div className="flex gap-2 overflow-x-auto pb-1">
+                                                        {galleryImages.slice(0, 8).map((src, i) => (
+                                                            <button key={i} type="button" onClick={() => setLightboxSrc(src)} aria-label={`View image ${i + 1}`}
+                                                                className="h-14 w-14 shrink-0 overflow-hidden rounded-lg" style={{ background: "#F4F5F6", cursor: "zoom-in" }}>
+                                                                <img src={resizedImageUrl(src, { width: 128 })} alt="" loading="lazy" className="h-full w-full object-cover" />
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                {(manufacturer || modelNo || gradeVariant) && (
+                                                    <div className="rounded-xl border px-3.5" style={{ borderColor: C.hair }}>
+                                                        <Fact label="Manufacturer" value={manufacturer} />
+                                                        <Fact label="Model / Part No." value={modelNo} />
+                                                        <Fact label="Grade / Variant" value={gradeVariant} />
+                                                    </div>
+                                                )}
+                                                {description && (
+                                                    <div>
+                                                        <p className="mb-1 text-[11px] font-extrabold uppercase tracking-wider" style={{ color: C.muted }}>Description</p>
+                                                        <p className="text-[12.5px] font-medium leading-relaxed tracking-wide" style={{ color: C.ink }}>{description}</p>
+                                                    </div>
+                                                )}
+                                                {manufacturingDetails && (
+                                                    <div>
+                                                        <p className="mb-1 text-[11px] font-extrabold uppercase tracking-wider" style={{ color: C.muted }}>Manufacturing</p>
+                                                        <p className="text-[12.5px] font-medium leading-relaxed tracking-wide" style={{ color: C.ink }}>{manufacturingDetails}</p>
+                                                    </div>
+                                                )}
+                                                {specifications.length > 0 && (
+                                                    <div>
+                                                        <p className="mb-1 text-[11px] font-extrabold uppercase tracking-wider" style={{ color: C.muted }}>Specifications</p>
+                                                        <div className="overflow-hidden rounded-xl border" style={{ borderColor: C.hair }}>
+                                                            {specifications.map((s, i) => (
+                                                                <div key={i} className="flex justify-between gap-3 px-3.5 py-2 text-[12px] font-semibold tracking-wide"
+                                                                    style={{ background: i % 2 === 0 ? "white" : C.hairSoft, color: C.ink }}>
+                                                                    <span style={{ color: C.muted }}>{s.key}</span>
+                                                                    <span className="text-right">{s.value}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </Collapse>
+                                )}
                             </div>
                         </div>
 
-                        {/* ---------------- Sticky footer ---------------- */}
-                        <div className="shrink-0 border-t bg-white px-5 py-4 sm:px-6" style={{ borderColor: C.hairSoft }}>
-                            {!locationStatus.serviceable ? (
-                                <ConstraintNotice reasons={[{ icon: MapPin, message: locationStatus.message }]} />
-                            ) : (
-                                <>
-                                    {!windowStatus.open && (
-                                        <div className="mb-3"><Notice tone="warn">{windowStatus.message}</Notice></div>
+                        {/* ============ STICKY FOOTER (thumb zone) ============ */}
+                        <div className="shrink-0 border-t bg-white px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2.5 sm:px-5" style={{ borderColor: C.hairSoft }}>
+                            {/* Row 1: quantity + total */}
+                            <div className="flex items-center gap-3">
+                                <div className="min-w-0 flex-1">
+                                    {isSample ? (
+                                        <p className="text-[14px] font-extrabold tabular-nums" style={{ color: C.ink }}>
+                                            {quantity} {seller?.unit} <span className="text-[11px] font-semibold" style={{ color: C.muted }}>sample</span>
+                                        </p>
+                                    ) : (
+                                        <Stepper compact value={quantity} onChange={setQuantity} min={minQuantity} max={maxQuantity} />
                                     )}
+                                </div>
+                                <div className="shrink-0 text-right leading-none">
+                                    <p className="text-[9.5px] font-extrabold uppercase tracking-[0.1em]" style={{ color: C.muted }}>Total</p>
+                                    <p className="mt-1 text-[19px] font-extrabold tabular-nums" style={{ color: C.ink }}>
+                                        {priceLoading ? <SkeletonBar width="80px" /> : quote ? `₹${inr(quote.subtotal)}` : "—"}
+                                    </p>
+                                </div>
+                            </div>
 
-                                    {quote && (
-                                        <div className="mb-3 flex items-center justify-between">
-                                            <span className="text-[11.5px] font-bold tracking-wider" style={{ color: C.muted }}>Total payable</span>
-                                            <span className="flex items-center text-[19px] font-extrabold tabular-nums tracking-wider" style={{ color: C.ink }}>
-                                                <IndianRupee className="h-4 w-4" />{inr(quote.subtotal)}
+                            {/* Row 2: MOQ note (one quiet line; red only when below MOQ) */}
+                            {hasMoqNote && (
+                                <p role={belowMoq ? "alert" : undefined}
+                                    className="mt-1.5 flex items-start gap-1 text-[11px] font-semibold leading-snug tracking-wide"
+                                    style={{ color: belowMoq ? "#B3261E" : C.muted }}>
+                                    {belowMoq ? <AlertCircle className="mt-[1px] h-3 w-3 shrink-0" /> : <Info className="mt-[1px] h-3 w-3 shrink-0" />}
+                                    <span className="line-clamp-2">{moqNoteText}</span>
+                                </p>
+                            )}
+
+                            {/* Row 3: credit (inline, compact; not for samples) */}
+                            {!isSample && (
+                                <>
+                                    {crossesCreditLimit && (
+                                        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-lg px-2.5 py-1.5" style={{ background: "#FEF6E7" }}>
+                                            <span className="flex min-w-0 flex-1 items-center gap-1 text-[11.5px] font-semibold leading-snug" style={{ color: "#92600A" }}>
+                                                <AlertCircle className="h-3 w-3 shrink-0" />
+                                                Above your remaining credit (₹{inr(creditRemaining)})
                                             </span>
+                                            <button type="button" onClick={() => pickPayMode("standard")}
+                                                className="h-7 rounded-md border bg-white px-2.5 text-[11.5px] font-bold" style={{ borderColor: C.hair, color: C.ink }}>
+                                                Pay now
+                                            </button>
+                                            {limitIncreasePending ? (
+                                                <span className="text-[11px] font-semibold" style={{ color: "#92600A" }}>Higher limit requested</span>
+                                            ) : limitIncreaseCooldownActive ? (
+                                                <span className="text-[11px] font-semibold" style={{ color: "#92600A" }}>Ask again after {fmtDate(creditStatus.limit_increase_cooldown_until)}</span>
+                                            ) : (
+                                                <button type="button" onClick={handleRequestCreditIncrease} disabled={requestingIncrease}
+                                                    className="inline-flex h-7 items-center gap-1 rounded-md border px-2.5 text-[11.5px] font-bold disabled:opacity-50"
+                                                    style={{ borderColor: "#7c3aed40", color: "#7c3aed", background: "#7c3aed08" }}>
+                                                    {requestingIncrease ? <Loader2 className="h-3 w-3 animate-spin" /> : <CreditCard className="h-3 w-3" />}
+                                                    Higher limit
+                                                </button>
+                                            )}
                                         </div>
                                     )}
 
-                                    {!isSample && (
-                                        canBuyOnCredit ? (
-                                            crossesCreditLimit ? (
-                                                limitIncreasePending ? (
-                                                    <div className="mb-2.5">
-                                                        <Notice tone="info">
-                                                            You've asked {seller.display_name} for a higher credit limit — waiting for their response.
-                                                        </Notice>
-                                                    </div>
-                                                ) : limitIncreaseCooldownActive ? (
-                                                    <div className="mb-2.5">
-                                                        <Notice tone="warn">
-                                                            This order is above your remaining credit. Your last request was declined — you can ask again
-                                                            after {new Date(creditStatus.limit_increase_cooldown_until).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}.
-                                                        </Notice>
-                                                    </div>
-                                                ) : (
-                                                    <button type="button" onClick={handleRequestCreditIncrease} disabled={requestingIncrease}
-                                                        className="mb-2.5 flex w-full items-center justify-center gap-1.5 rounded-xl border px-5 py-3 text-[13.5px] font-bold disabled:opacity-50"
-                                                        style={{ borderColor: "#7c3aed40", color: "#7c3aed", background: "#7c3aed08" }}>
-                                                        <CreditCard className="h-3.5 w-3.5" /> {requestingIncrease ? "Requesting…" : "Ask for a higher credit limit"}
-                                                    </button>
-                                                )
-                                            ) : (
-                                                <button type="button" onClick={() => handleSubmit("credit")} disabled={submitting || belowMoq || outOfStock || exceedsStock}
-                                                    className="mb-2.5 flex w-full items-center justify-center gap-1.5 rounded-xl border px-5 py-3 text-[13.5px] font-bold disabled:opacity-50"
-                                                    style={{ borderColor: "#7c3aed40", color: "#7c3aed", background: "#7c3aed08" }}>
-                                                    <CreditCard className="h-3.5 w-3.5" /> {submitting ? "Placing…" : "Buy on credit"}
-                                                </button>
-                                            )
-                                        ) : creditStatus?.status === "pending" ? (
-                                            <div className="mb-2.5"><Notice tone="info">Your credit request to {seller.display_name} is awaiting their response — check your chat with them.</Notice></div>
-                                        ) : creditCooldownActive ? (
-                                            <div className="mb-2.5">
-                                                <Notice tone="warn">Your last credit request was declined. You can request again after {new Date(creditStatus.cooldown_until).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}.</Notice>
-                                            </div>
-                                        ) : (
-                                            <button type="button" onClick={handleRequestCredit} disabled={requestingCredit || belowMoq || outOfStock || exceedsStock}
-                                                className="mb-2.5 flex w-full items-center justify-center gap-1.5 rounded-xl border px-3 py-3 text-[12.5px] font-bold disabled:opacity-60"
+                                    {canAskCredit && (
+                                        <div className="mt-2 flex items-center justify-between gap-2">
+                                            <span className="min-w-0 truncate text-[11.5px] font-semibold tracking-wide" style={{ color: C.muted }}>
+                                                Want to pay later?
+                                            </span>
+                                            <button type="button" onClick={handleAskCredit} disabled={requestingCredit || submitting}
+                                                aria-label={`Ask ${sellerLabel} for credit`}
+                                                className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full border px-3 text-[11.5px] font-bold tracking-wide disabled:opacity-50"
                                                 style={{ borderColor: "#7c3aed40", color: "#7c3aed", background: "#7c3aed08" }}>
-                                                <CreditCard className="h-3.5 w-3.5" /> {requestingCredit ? "Requesting…" : "Request credit from this seller"}
+                                                {requestingCredit ? <Loader2 className="h-3 w-3 animate-spin" /> : <CreditCard className="h-3 w-3" />}
+                                                {requestingCredit ? "Sending…" : "Ask for credit"}
                                             </button>
-                                        )
+                                        </div>
                                     )}
-
-                                    <div className="flex gap-2.5">
-                                        {!isSample && !isCredit && (
-                                            <button
-                                                type="button"
-                                                onClick={async () => {
-                                                    if (quote && quote.meetsMoq === false) {
-                                                        setError(`Minimum order quantity is ${formatMoqForBasis(quote.moq, seller)}.`);
-                                                        return;
-                                                    }
-                                                    if (maxQuantity != null && Number(quantity) > Number(maxQuantity)) {
-                                                        setError(`You can order at most ${maxQuantity} ${saleUnitLabel(seller?.masterPackSize)}${Number(maxQuantity) === 1 ? "" : "s"} from this seller.`);
-                                                        return;
-                                                    }
-                                                    const confirmed = await pendingQuoteRef.current;
-                                                    const finalQuote = confirmed || quote;
-                                                    if (finalQuote && finalQuote.meetsMoq === false) {
-                                                        setError(`Minimum order quantity is ${formatMoqForBasis(finalQuote.moq, seller)}.`);
-                                                        return;
-                                                    }
-                                                    setSubmitting(true);
-                                                    const res = await addToCart(token, { submissionId: seller.offerId, quantity: Number(quantity), purchaseBasis: basis });
-                                                    setSubmitting(false);
-                                                    if (!res?.success) return setError(res?.message || "Couldn't add to cart.");
-                                                    onClose();
-                                                    navigate("/cart");
-                                                }}
-                                                disabled={submitting || belowMoq || outOfStock || exceedsStock}
-                                                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border px-4 py-3.5 text-[13.5px] font-bold disabled:opacity-50"
-                                                style={{ borderColor: C.hair, color: C.ink }}
-                                            >
-                                                <ShoppingCart className="h-4 w-4" /> Add to cart
-                                            </button>
-                                        )}
-
-                                        <button onClick={() => handleSubmit()} disabled={submitting || (!isSample && (belowMoq || outOfStock || exceedsStock))}
-                                            className="flex flex-[1.4] items-center justify-center gap-1.5 rounded-xl px-5 py-3.5 text-[14px] font-bold text-white shadow-sm transition-opacity duration-150 disabled:opacity-50"
-                                            style={{ background: isSample ? "linear-gradient(135deg, #006F83 0%, #047084 100%)" : "linear-gradient(135deg, #d2462b 0%, #c71f11 100%)" }}>
-                                            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : (isSample ? "Request sample" : "Place order")}
-                                        </button>
-                                    </div>
+                                    {creditKind === "pending" && (
+                                        <p className="mt-2 flex items-center gap-1 text-[11.5px] font-semibold" style={{ color: "#92600A" }}>
+                                            <Clock className="h-3 w-3 shrink-0" /> Credit request sent · waiting for {sellerLabel}
+                                        </p>
+                                    )}
+                                    {creditKind === "cooldown" && (
+                                        <p className="mt-2 flex items-center gap-1 text-[11.5px] font-semibold" style={{ color: C.muted }}>
+                                            <Info className="h-3 w-3 shrink-0" /> Credit declined · ask again after {fmtDate(creditStatus.cooldown_until)}
+                                        </p>
+                                    )}
+                                    {creditAskError && (
+                                        <p role="alert" className="mt-2 flex items-start gap-1 text-[11.5px] font-semibold leading-snug" style={{ color: "#B3261E" }}>
+                                            <AlertCircle className="mt-[1px] h-3 w-3 shrink-0" /> <span>{creditAskError}</span>
+                                        </p>
+                                    )}
                                 </>
                             )}
+
+                            {/* Row 4: actions */}
+                            <div className="mt-2.5 flex gap-2">
+                                {!isSample && (
+                                    <button type="button" onClick={handleAddToCart} aria-label="Add to cart" title="Add to cart"
+                                        disabled={submitting || belowMoq || outOfStock || exceedsStock || priceLoading}
+                                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border disabled:opacity-50"
+                                        style={{ borderColor: C.hair, color: C.ink }}>
+                                        <ShoppingCart className="h-[18px] w-[18px]" />
+                                    </button>
+                                )}
+                                <button type="button" onClick={handlePrimary} disabled={ctaDisabled}
+                                    className="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-xl px-4 text-[14px] font-bold text-white shadow-sm transition-opacity duration-150 disabled:opacity-50"
+                                    style={{ background: ctaBackground }}>
+                                    {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : ctaLabel}
+                                </button>
+                            </div>
                         </div>
+
+                        {toast && (
+                            <div className="pointer-events-none absolute inset-x-0 top-4 z-10 flex justify-center">
+                                <span className="rounded-full bg-black px-3.5 py-1.5 text-[12px] font-bold text-white shadow-lg">{toast}</span>
+                            </div>
+                        )}
                     </>
                 )}
             </motion.div>
+
             {showTransportModal && (
                 <TransportPreferenceModal
                     open
                     seller={seller}
                     destCity={effectiveCity}
                     destState={effectiveState}
+                    destAddressId={selectedAddressId}
                     removedNotice={transportRemovedNotice}
-                    onClose={() => { setShowTransportModal(false); setTransportRemovedNotice(null); }}
+                    onClose={() => { autoPlaceRef.current = false; setShowTransportModal(false); setTransportRemovedNotice(null); }}
+                    onAddressChange={() => { /* address now lives in BuyerAddressContext */ }}
                     onResolved={(result) => {
+                        setShowTransportModal(false);
+                        setTransportRemovedNotice(null);
                         if (result?.pending) {
+                            autoPlaceRef.current = false;
                             setTransportPreference(null);
                             setPendingTransportProposal(result);
-                        } else {
-                            setTransportPreference(result);
-                            setPendingTransportProposal(null);
+                            return;
                         }
-                        setTransportRemovedNotice(null);
-                        setShowTransportModal(false);
+                        setTransportPreference(result);
+                        setPendingTransportProposal(null);
+                        if (autoPlaceRef.current && result?.routeOptionId) {
+                            autoPlaceRef.current = false;
+                            handleSubmit({ routeOptionId: result.routeOptionId });
+                        }
                     }}
+                    onIntentSource="buynow"
+                    onCaptureIntent={() => ({
+                        offerId: seller.offerId,
+                        productId: product?.id,
+                        productName: product?.name,
+                        quantity, basis, orderMode,
+                        notes, addressId: selectedAddressId,
+                    })}
                 />
             )}
+
+            {/* Image lightbox: portalled above everything (never clipped by the dialog's transform),
+                and its clicks never bubble to the overlay (which would close Buy Now). */}
+            {lightboxSrc && createPortal(
+                <div className="fixed inset-0 z-[1200]" onClick={(e) => e.stopPropagation()}>
+                    <ImageLightbox src={lightboxSrc} alt="" onClose={() => setLightboxSrc(null)} />
+                </div>,
+                document.body
+            )}
         </motion.div>
+    );
+}
+
+// Self-contained: works whether or not a BuyerAddressProvider already wraps the app.
+export default function BuyNowModal(props) {
+    return (
+        <BuyerAddressProvider>
+            <BuyNowModalInner {...props} />
+        </BuyerAddressProvider>
     );
 }

@@ -1,0 +1,50 @@
+/* src/components/save/save-tabs.css
+   Only what is specific to the Save shell. The tab navigation itself is styled by grow-modules.css (gk / gn-*),
+   and the header (.hd / .wrap), variables and page styles come from save.css and save-home.css. */
+
+/* cart button in the header */
+.sv .svl-cart {
+    position: relative;
+    flex: none;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 1px solid var(--line);
+    background: var(--s);
+    color: var(--ink);
+    display: grid;
+    place-items: center;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background .2s, transform .15s;
+}
+
+.sv .svl-cart:hover {
+    background: var(--s2);
+}
+
+.sv .svl-cart:active {
+    transform: scale(.94);
+}
+
+.sv .svl-cart .bdg {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border-radius: 10px;
+    display: grid;
+    place-items: center;
+    background: #C0341D;
+    color: #fff;
+    border: 2px solid var(--bg);
+    font: 900 .7rem/1 var(--f);
+    font-variant-numeric: tabular-nums;
+}
+
+/* "Open RFQs" tile calls scrollIntoView: keep the list header clear of the header + compact bar. */
+.sv.svl .sh-sec {
+    scroll-margin-top: 130px;
+}

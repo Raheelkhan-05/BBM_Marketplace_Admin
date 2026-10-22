@@ -1,0 +1,155 @@
+/* grow-delivery.css — layout of the "Where do you deliver?" picker.
+   Imported by GrowDeliveryPicker.jsx. Selectors are deliberately a little more specific than the older
+   grow-extras.css rules (".gx-box" + tripled class), so they win no matter which stylesheet loads first. */
+
+/* ---- one row = [ box ][ label ], vertically centred, with a comfortable gap ---- */
+.gx-box .gx-ck.gx-ck.gx-ck {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 44px;
+    padding: 6px 4px;
+    margin: 0;
+    cursor: pointer;
+    line-height: 1.3;
+    font-weight: 600;
+    color: var(--ink, #08222B);
+    -webkit-tap-highlight-color: transparent;
+}
+
+.gx-box .gx-ck.gx-ck.gx-ck.off {
+    color: var(--mute, #52686F);
+}
+
+.gx-box .gx-ck.gx-ck.gx-ck>span {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+/* custom checkbox: same size everywhere, perfectly centred tick */
+.gx-box .gx-ck.gx-ck.gx-ck>input[type="checkbox"] {
+    -webkit-appearance: none;
+    appearance: none;
+    flex: none;
+    box-sizing: border-box;
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    place-content: center;
+    border: 1.8px solid #9FB1B8;
+    border-radius: 6px;
+    background: #fff;
+    cursor: pointer;
+    transition: background .15s, border-color .15s, box-shadow .15s;
+}
+
+.gx-box .gx-ck.gx-ck.gx-ck>input[type="checkbox"]::after {
+    content: "";
+    width: 10px;
+    height: 6px;
+    margin-top: -2px;
+    border-left: 2.2px solid #fff;
+    border-bottom: 2.2px solid #fff;
+    transform: rotate(-45deg) scale(0);
+    transition: transform .12s ease-out;
+}
+
+.gx-box .gx-ck.gx-ck.gx-ck>input[type="checkbox"]:checked {
+    background: var(--ink, #08222B);
+    border-color: var(--ink, #08222B);
+}
+
+.gx-box .gx-ck.gx-ck.gx-ck>input[type="checkbox"]:checked::after {
+    transform: rotate(-45deg) scale(1);
+}
+
+.gx-box .gx-ck.gx-ck.gx-ck>input[type="checkbox"]:focus-visible {
+    box-shadow: 0 0 0 3px rgba(30, 120, 214, .35);
+    outline: none;
+}
+
+/* ---- state row: name on the left, "All cities" button on the right, both centred ---- */
+.gx-box .gx-st .gx-sr.gx-sr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 0 4px;
+}
+
+.gx-box .gx-st .gx-sr.gx-sr>.gx-ck {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.gx-box .gx-cb.gx-cb.gx-cb {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.gx-box .gx-st+.gx-st {
+    border-top: 1px solid var(--line, #DFE7EA);
+}
+
+/* ---- city grid ---- */
+.gx-box .gx-cg.gx-cg {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    column-gap: 14px;
+    row-gap: 0;
+    align-items: center;
+}
+
+/* ---- "x of y selected" + toggle button ---- */
+.gx-box .gx-bar.gx-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 36px;
+}
+
+.gx-box .gx-links.gx-links {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.gx-box .gx-link.gx-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    padding: 0 12px;
+    border-radius: 999px;
+    border: 1.5px solid var(--line, #DFE7EA);
+    background: #fff;
+    font: 800 .82rem var(--f, inherit);
+    color: var(--ink, #08222B);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.gx-box .gx-link.gx-link:hover:not(:disabled) {
+    border-color: var(--ink, #08222B);
+}
+
+.gx-box .gx-link.gx-link:disabled {
+    opacity: .45;
+    cursor: default;
+}
+
+/* the "Try again" link inside a message stays a plain text link */
+.gx-box .gx-sum .gx-link.gx-link {
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    text-decoration: underline;
+    border-radius: 0;
+}

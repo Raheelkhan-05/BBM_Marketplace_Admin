@@ -241,7 +241,7 @@ function BankTransferPanel({ info, bankMethod, setBankMethod, msLeft, hasUpi }) 
             <div className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-[12px] font-semibold leading-snug" style={{ background: `${C.secondary}0f`, color: C.secondary }}>
                 <Clock className="h-3.5 w-3.5 shrink-0" />
                 {formatCountdown(msLeft)} left in this window — your details are saved if you need to switch apps.
-                {hasUpi && " Prefer scanning a QR instead? Switch to the UPI tab above."}
+                {/* {hasUpi && " Prefer scanning a QR instead? Switch to the UPI tab above."} */}
             </div>
         </>
     );
@@ -254,7 +254,7 @@ export default function PaymentQRModal({ token, orderId, onClose, onBack, onDone
 
     // Which method the buyer currently has selected — only meaningful once
     // `info` has loaded and we know which methods are actually available.
-    const [method, setMethod] = useState(DEFAULT_PAYMENT_METHOD); // 'upi' | 'neft'  (RTGS shares the NEFT tab)
+    // const [method, setMethod] = useState(DEFAULT_PAYMENT_METHOD); // 'upi' | 'neft'  (RTGS shares the NEFT tab)
     const [bankMethod, setBankMethod] = useState("neft"); // 'neft' | 'rtgs', only relevant when method === 'neft'
 
     const [utr, setUtr] = useState("");
@@ -280,32 +280,23 @@ export default function PaymentQRModal({ token, orderId, onClose, onBack, onDone
                 orderId,
                 orderNumber: cached.orderNumber,
                 amount: cached.amount,
-                vpa: cached.vpa,
-                payeeName: cached.payeeName,
-                note: cached.note,
-                upiUri: cached.upiUri,
                 bankDetails: cached.bankDetails,
                 existingProof: null,
             });
             setUtr(cached.utrDraft || "");
-            setMethod(cached.method || DEFAULT_PAYMENT_METHOD);
+            if (cached.method === "neft" || cached.method === "rtgs") setBankMethod(cached.method);
             setStartedAt(cached.startedAt);
             setLoading(false);
         } else {
             setLoading(true);
         }
 
+
         (async () => {
             const res = await fetchPaymentInstructions(token, orderId);
             if (cancelled) return;
 
             if (!res?.success) {
-                // `res.status` is only set when the SERVER explicitly told us
-                // the order's state changed (e.g. already verified/cancelled
-                // elsewhere) — that's worth surfacing and clearing the
-                // session over. A generic/network failure with a cached
-                // session already on screen is not worth blowing away a
-                // working session for; just leave the cached view up.
                 if (res?.status) {
                     clearPaymentSession();
                     setError(`This order is no longer awaiting payment (status: ${res.status}). Please check your Orders page.`);
@@ -320,28 +311,16 @@ export default function PaymentQRModal({ token, orderId, onClose, onBack, onDone
             setInfo(res);
             if (res.existingProof?.status === "pending") setSubmitted(true);
             if (res.existingProof?.status === "rejected" && !cached?.utrDraft) setUtr(res.existingProof.utr_number || "");
-            // If the buyer previously submitted (or retried) under a
-            // specific method, default back to that tab.
-            if (res.existingProof?.payment_method && !cached?.method) {
-                const prev = res.existingProof.payment_method;
-                setMethod(prev === "rtgs" || prev === "neft" ? "neft" : "upi");
-                if (prev === "rtgs" || prev === "neft") setBankMethod(prev);
-            } else if (!cached?.method) {
-                // Otherwise, default to whichever method is actually available —
-                // prefer UPI when both are configured, since it's the faster path.
-                setMethod(res.upiUri ? "upi" : "neft");
+            if (res.existingProof?.payment_method === "rtgs" || res.existingProof?.payment_method === "neft") {
+                setBankMethod(res.existingProof.payment_method);
             }
 
             const session = savePaymentSession({
                 orderId,
                 orderNumber: res.orderNumber,
                 amount: res.amount,
-                vpa: res.vpa,
-                payeeName: res.payeeName,
-                note: res.note,
-                upiUri: res.upiUri,
                 bankDetails: res.bankDetails,
-                method: cached?.method,
+                method: "neft",
                 utrDraft: cached?.utrDraft,
             });
             setStartedAt(session.startedAt);
@@ -388,8 +367,7 @@ export default function PaymentQRModal({ token, orderId, onClose, onBack, onDone
         if (!utr.trim()) { setError("Please enter the UTR / transaction reference number."); return; }
         setError(null);
         setSubmitting(true);
-        const submitMethod = method === "neft" ? bankMethod : method;
-        const res = await submitPaymentProof(token, orderId, { utr: utr.trim(), method: submitMethod, screenshotFile });
+        const res = await submitPaymentProof(token, orderId, { utr: utr.trim(), method: bankMethod, screenshotFile });
         setSubmitting(false);
         if (!res?.success) { setError(res?.message || "Couldn't submit payment proof."); return; }
         clearPaymentSession();
@@ -436,12 +414,8 @@ export default function PaymentQRModal({ token, orderId, onClose, onBack, onDone
             orderId,
             orderNumber: res.orderNumber,
             amount: res.amount,
-            vpa: res.vpa,
-            payeeName: res.payeeName,
-            note: res.note,
-            upiUri: res.upiUri,
             bankDetails: res.bankDetails,
-            method,
+            method: bankMethod,
             utrDraft: utr,
         });
         setStartedAt(session.startedAt);
@@ -561,7 +535,7 @@ export default function PaymentQRModal({ token, orderId, onClose, onBack, onDone
                     ) : (
                         // ---------------- Payment method + form ----------------
                         <>
-                            {showTabs && (
+                            {/* {showTabs && (
                                 <div
                                     className="flex rounded-xl p-1"
                                     style={{ background: C.hairSoft }}
@@ -588,32 +562,9 @@ export default function PaymentQRModal({ token, orderId, onClose, onBack, onDone
                                         <Landmark className="h-3.5 w-3.5" /> NEFT / RTGS
                                     </button>
                                 </div>
-                            )}
+                            )} */}
 
-                            {method === "upi" && hasUpi ? (
-                                <>
-                                    <div className="flex flex-col items-center gap-2 rounded-2xl border p-5" style={{ borderColor: C.hair }}>
-                                        <QRCodeSVG value={info.upiUri} size={200} includeMargin />
-                                        <p className="mt-1 text-[20px] font-extrabold tabular-nums" style={{ color: C.ink }}>₹{info.amount.toLocaleString("en-IN")}</p>
-                                        <p className="text-[12px] font-semibold tracking-wide" style={{ color: C.muted }}>Pay to {info.vpa}</p>
-                                    </div>
-
-                                    {isMobileDevice() && (
-                                        <button onClick={handleOpenUpiApp}
-                                            className="flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-[14px] font-bold tracking-wide text-white"
-                                            style={{ background: "linear-gradient(135deg, #006F83 0%, #047084 100%)" }}>
-                                            <Smartphone className="h-4 w-4" /> Open in UPI app
-                                        </button>
-                                    )}
-
-                                    <div className="flex items-start gap-2 rounded-lg px-3 py-2.5 text-[12px] font-semibold leading-snug" style={{ background: `${C.secondary}0f`, color: C.secondary }}>
-                                        <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                                        Scan the QR (or use the button above on mobile), complete the payment in your UPI app, then come back here and enter the UTR / reference number below.
-                                        You have {formatCountdown(msLeft)} left in this window — your details are saved if you need to switch apps.
-                                        {hasBank && " Prefer a bank transfer instead? Switch to the NEFT / RTGS tab above."}
-                                    </div>
-                                </>
-                            ) : hasBank ? (
+                            {hasBank ? (
                                 <BankTransferPanel info={info} bankMethod={bankMethod} setBankMethod={setBankMethod} msLeft={msLeft} hasUpi={hasUpi} />
                             ) : null}
 

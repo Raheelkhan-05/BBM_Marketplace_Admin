@@ -2,44 +2,42 @@
 // type scale and card language. Also adds what was missing versus the
 // sales-orders list: pack-quantity display (was raw unit qty only),
 // delivery estimate, stock-shortfall note, and sample badge/free-sample
-// handling. Keeps this page seller-relevant only — buyer contact +
+// handling. Keeps this page seller-relevant only — buyer identity +
 // address + GST verification (their concern), payout breakdown (their
 // concern) — no buyer-side navigation chrome.
 //
-// NEW (this pass): shows the transport preference (mode/company/details)
-// agreed with the buyer, if one was snapshotted onto this order at
-// placement time (orders.transport_mode) — mirrors the same card added
-// to OrderDetailPage.jsx (the buyer's view of the same order).
+// NEW (this pass):
+//  - Payment terms banner (credit / advance) right under the header —
+//    sellers see both kinds.
+//  - The Buyer card no longer shows the buyer's phone number or email;
+//    it offers a "Chat with buyer" button (/chat/:id) instead.
 //
-// NEW (notifications pass): marks every unread "sales" notification for
-// this order (link === /seller/orders/:id) as read on open, via
-// NotificationsContext — this is what steps down the My Orders badge and
-// the Sales Orders tab count.
-//
-// NEW (PO document pass): the seller's own order fetch has no reason to
-// join seller_profiles (they already know their own shop), so
-// PurchaseOrderDocument's "Vendor" block has nothing to read there. We
-// fill that gap with vendorOverride, sourced from the already-loaded
-// auth `profile` — same place OrdersPage.jsx already reads
-// `profile?.seller_status` from.
+// EARLIER: shows the transport preference (mode/company/details) agreed
+// with the buyer (orders.transport_mode); marks every unread "sales"
+// notification for this order (link === /seller/orders/:id) as read on
+// open via NotificationsContext; fills the PO document's Vendor block from
+// the auth `profile` via vendorOverride, because the seller's own order
+// fetch doesn't join seller_profiles.
 // TODO: confirm these are the actual field names on your AuthContext's
 // profile object (display_name/city/state) — adjust if your seller shop
 // info lives under different keys or needs a separate fetch.
 import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, Package, User, Phone, Mail, ShieldCheck, Loader2, MapPin, IndianRupee, Radio, CheckCircle2, Circle, XCircle, Truck } from "lucide-react";
+import { ArrowLeft, Package, User, ShieldCheck, Loader2, MapPin, IndianRupee, Radio, CheckCircle2, Circle, XCircle, Truck } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useNotifications } from "../context/NotificationsContext.jsx";
-import { fetchSellerOrderById, confirmSellerOrder, confirmSellerOrderWithTransport, rejectSellerOrder, processSellerOrder, shipSellerOrder, deliverSellerOrder, fetchSellerOwnTransportOptions } from "../utils/api.js";
+import { fetchSellerOrderById, confirmSellerOrder, confirmSellerOrderWithTransport, rejectSellerOrder, processSellerOrder, shipSellerOrder, deliverSellerOrder, fetchSellerOwnTransportOptions, fetchSellerOwnGstin } from "../utils/api.js";
 import { shipSellerOrderWithTransport } from "../utils/api.transport.js";
 import ConfirmOrderModal from "../components/orders/ConfirmOrderModal.jsx";
+import DisputePanel from "../components/orders/DisputePanel.jsx";
 import TransportInfoCard from "../components/orders/TransportInfoCard.jsx";
 import useRealtimeOrder from "../hooks/useRealtimeOrder.js";
 import { C, EASE } from "../components/catalog/tokens";
 import PurchaseOrderDocument from "../components/orders/PurchaseOrderDocument.jsx";
 import ShipOrderModal from "../components/orders/ShipOrderModal.jsx";
-import { StatusChip, SampleBadge, ItemQuantityLine, DeliveryEstimate, displayAmount, StockShortfallNote, shouldShowDelivery, shouldShowShortfall } from "../components/orders/OrderDisplayHelpers.jsx";
+import { StatusChip, displayStatus, SampleBadge, ItemQuantityLine, DeliveryEstimate, displayAmount, StockShortfallNote, shouldShowDelivery, shouldShowShortfall, PaymentTermsBanner, FreightNotice, ChatWithBuyerButton } from "../components/orders/OrderDisplayHelpers.jsx";
+import OrderTimingNote from "../components/orders/OrderTimingNote.jsx";
 
 const NEXT_ACTION = {
     pending_confirmation: [
@@ -75,7 +73,7 @@ function transportModeLabel(mode) {
     return mode.charAt(0).toUpperCase() + mode.slice(1);
 }
 
-function Timeline({ status, events }) {
+function Timeline({ status, events, autoRejected = false }) {
     const isTerminalBad = status === "cancelled" || status === "rejected";
     const currentIdx = TIMELINE_STEPS.indexOf(status);
     return (
@@ -100,7 +98,9 @@ function Timeline({ status, events }) {
             {isTerminalBad && (
                 <div className="flex gap-3">
                     <XCircle className="h-5 w-5" style={{ color: C.primary }} />
-                    <p className="text-[12.5px] font-bold tracking-wide" style={{ color: C.primary }}>{status === "cancelled" ? "Cancelled by buyer" : "Rejected"}</p>
+                    <p className="text-[12.5px] font-bold tracking-wide" style={{ color: C.primary }}>
+                        {autoRejected ? "Not accepted — you didn't respond in 24 hours" : status === "cancelled" ? "Cancelled by buyer" : "Rejected"}
+                    </p>
                 </div>
             )}
         </div>
@@ -126,10 +126,22 @@ export default function SellerOrderDetailPage() {
     const [shipModalOpen, setShipModalOpen] = useState(false);
 
     const [sellerTransportOptions, setSellerTransportOptions] = useState([]);
+    const [sellerGstin, setSellerGstin] = useState(null);
 
     useEffect(() => {
         fetchSellerOwnTransportOptions(token).then((res) => {
             if (res?.success) setSellerTransportOptions(res.transportOptions || []);
+        });
+    }, [token]);
+
+    // Seller's own GSTIN, for the PO document's Vendor block — mirrors
+    // checkoutStatus()'s business_profiles.gstin lookup on the buyer side
+    // (orders.controller.js). profile (AuthContext) doesn't carry this
+    // field, so it's fetched once here, same pattern as
+    // sellerTransportOptions above.
+    useEffect(() => {
+        fetchSellerOwnGstin(token).then((res) => {
+            if (res?.success) setSellerGstin(res.gstin || null);
         });
     }, [token]);
 
@@ -139,6 +151,7 @@ export default function SellerOrderDetailPage() {
         display_name: profile?.display_name || profile?.shop_name || profile?.business_name || null,
         city: profile?.city || null,
         state: profile?.state || null,
+        gstin: sellerGstin,
     };
 
     const fetcher = useCallback((orderId) => fetchSellerOrderById(token, orderId), [token]);
@@ -148,7 +161,7 @@ export default function SellerOrderDetailPage() {
 
     const actions = NEXT_ACTION[order?.status] || [];
     const runAction = async (action) => {
-        if (action.needsShipModal) { setShipModalOpen(true); return; } // add this
+        if (action.needsShipModal) { setShipModalOpen(true); return; }
         let reason;
         if (action.needsReason) {
             reason = window.prompt("Reason for rejecting this order (shown to the buyer):");
@@ -193,11 +206,17 @@ export default function SellerOrderDetailPage() {
                     </div>
                     <p className="flex items-center gap-1 text-[11.5px] font-semibold tracking-wider" style={{ color: C.muted }}><Radio className="h-2.5 w-2.5 animate-pulse" style={{ color: "#059669" }} /> Live</p>
                 </div>
-                <StatusChip status={order.status} size="lg" />
+                <StatusChip status={displayStatus(order)} size="lg" />
             </div>
 
+            {/* Credit AND advance payment are both shown to sellers */}
+            <PaymentTermsBanner order={order} viewer="seller" standalone />
+            <OrderTimingNote order={order} viewer="seller" className="mt-3" />
+
+            <FreightNotice order={order} viewer="seller" className="mt-3" />
+
             <Card title="Order status">
-                <Timeline status={order.status} events={events} />
+                <Timeline status={order.status} events={events} autoRejected={!!order.auto_rejected_at} />
             </Card>
 
             {(shouldShowDelivery(order, firstItem) || shouldShowShortfall(order)) && (
@@ -240,13 +259,14 @@ export default function SellerOrderDetailPage() {
                     <User className="h-3.5 w-3.5" /> {order.buyer_contact_name}
                 </p>
                 {order.buyer_business_name && <p className="mt-1 text-[12px] font-semibold tracking-wider" style={{ color: C.muted }}>{order.buyer_business_name}{order.buyer_gstin ? ` · ${order.buyer_gstin}` : ""}</p>}
-                <p className="mt-1 flex flex-wrap items-center gap-x-3 text-[12.5px] font-semibold tracking-wider" style={{ color: C.muted }}>
-                    <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{order.buyer_contact_phone}</span>
-                    {order.buyer_contact_email && <span className="flex items-center gap-1"><Mail className="h-3 w-3" />{order.buyer_contact_email}</span>}
-                </p>
 
-                {order.buyer_notes && <p className="mt-2 text-[12.5px] font-medium italic tracking-wide" style={{ color: C.muted }}>"{order.buyer_notes}"</p>}
+                {/* Contact happens in chat — phone / email are intentionally not shown. */}
+                <ChatWithBuyerButton order={order} className="mt-3" />
+
+                {order.buyer_notes && <p className="mt-3 text-[12.5px] font-medium italic tracking-wide" style={{ color: C.muted }}>"{order.buyer_notes}"</p>}
             </Card>
+
+            <DisputePanel order={order} viewer="seller" onChanged={reload} />
 
             {actions.length > 0 && (
                 <div className="mt-5 flex gap-2">

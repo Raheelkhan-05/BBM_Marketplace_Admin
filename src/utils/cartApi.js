@@ -28,9 +28,9 @@ export async function removeFromCart(token, submissionId) {
     return request("DELETE", `/cart/items/${submissionId}`, token);
 }
 
-export async function checkoutCart(token, { shippingAddressId, notes }) {
-    return request("POST", "/cart/checkout", token, { shippingAddressId, notes });
-}
+// export async function checkoutCart(token, { shippingAddressId, notes }) {
+//     return request("POST", "/cart/checkout", token, { shippingAddressId, notes });
+// }
 
 // utils/cartApi.js  (updated payment-related exports — merge into your existing file)
 
@@ -63,6 +63,10 @@ export async function submitGroupPaymentProof(token, groupId, { utr, method, scr
         return { success: false, message: "Couldn't submit payment proof." };
     }
     return res.json();
+}
+
+export async function checkoutCart(token, { shippingAddressId, notes, transportPreferences, submissionIds } = {}) {
+    return request("POST", "/cart/checkout", token, { shippingAddressId, notes, transportPreferences, submissionIds });
 }
 
 // export async function submitGroupPaymentProof(token, groupId, { utr, screenshotUrl }) {

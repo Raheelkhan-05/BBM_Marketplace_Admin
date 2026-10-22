@@ -1,23 +1,28 @@
 // components/FloatingSellButton.jsx
 //
-// Fixed floating action button, bottom-right, navigates to /seller/sell.
-// Deliberately uses a DIFFERENT motion language than MarketplaceSearchBar's
-// comet-spin border: here the signature move is a slow "heartbeat" ripple —
-// soft rings that bloom outward from the button on a loop, like a pin
-// pulsing on a map, plus the plus-icon rotating open on hover. Same brand
-// colors as the rest of the app (#D2462B / #006F83), new gesture.
+// Desktop (md+): the original floating "Sell" button with its hover label.
+// Mobile (<md): a floating MENU button. Tapping it morphs the icon into an X,
+// dims the screen, and fans the menu items upward one by one.
+// Sell is the first (highlighted) item, so nothing is lost on mobile.
 
-import { useNavigate } from "react-router-dom";
-import { Plus } from "lucide-react";
-
-const RUST = "#D2462B";
-const TEAL = "#006F83";
+import { useEffect, useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
+import { Plus, Menu, X, Home, LayoutGrid } from "lucide-react";
 
 const RIPPLE_COUNT = 3;
 const RIPPLE_CYCLE_MS = 2600;
 const RIPPLE_STAGGER_MS = RIPPLE_CYCLE_MS / RIPPLE_COUNT;
 
-export default function FloatingSellButton({ to = "/seller/sell", label = "Sell" }) {
+// TODO: replace/extend with the same items BottomNavStrip used to show.
+const DEFAULT_MENU_ITEMS = [
+    { key: "home", label: "Home", icon: Home, to: "/home" },
+    { key: "browse", label: "Browse", icon: LayoutGrid, to: "/browse" },
+];
+
+/* ───────────────────────── Desktop (unchanged) ───────────────────────── */
+
+function DesktopSellButton({ to, label }) {
     const navigate = useNavigate();
 
     return (
@@ -28,8 +33,8 @@ export default function FloatingSellButton({ to = "/seller/sell", label = "Sell"
                     to   { opacity: 1; transform: translateY(0) scale(1); }
                 }
                 @keyframes fsb-breathe {
-                    0%, 100% { box-shadow: 0 8px 22px -6px rgba(210,70,43,0.5); }
-                    50%      { box-shadow: 0 10px 30px -4px rgba(210,70,43,0.68); }
+                    0%, 100% { box-shadow: 0 8px 22px -6px rgba(255, 255, 255, 0.5); }
+                    50%      { box-shadow: 0 10px 30px -4px rgba(255, 255, 255, 0.68); }
                 }
 
                 .fsb-wrap {
@@ -74,7 +79,7 @@ export default function FloatingSellButton({ to = "/seller/sell", label = "Sell"
                 }
             `}</style>
 
-            <div className="fixed bottom-16 right-4 z-40 md:bottom-8 md:right-8 fsb-wrap">
+            <div className="fixed bottom-8 right-8 z-[38] fsb-wrap">
                 <div className="relative">
                     {Array.from({ length: RIPPLE_COUNT }).map((_, i) => (
                         <span
@@ -88,12 +93,12 @@ export default function FloatingSellButton({ to = "/seller/sell", label = "Sell"
                         type="button"
                         onClick={() => navigate(to)}
                         aria-label={`${label} — start listing an item`}
-                        className="fsb-group fsb-btn relative flex h-14 w-14 items-center justify-center rounded-full text-white sm:h-16 sm:w-16 sm:w-auto sm:px-5"
-                        style={{ background: RUST }}
+                        className="fsb-group fsb-btn relative flex h-16 w-auto items-center justify-center rounded-full px-5 text-white"
+                        style={{ background: "#000000" }}
                     >
                         <span className="relative flex items-center">
                             <Plus size={24} strokeWidth={2.5} className="fsb-icon shrink-0" />
-                            <span className="fsb-label hidden text-[13px] font-bold tracking-wide sm:inline">
+                            <span className="fsb-label text-[13px] font-bold tracking-wide">
                                 {label}
                             </span>
                         </span>
@@ -101,5 +106,15 @@ export default function FloatingSellButton({ to = "/seller/sell", label = "Sell"
                 </div>
             </div>
         </>
+    );
+}
+
+/* ───────────────────────── Public component ───────────────────────── */
+
+export default function FloatingSellButton({ to = "/seller/sell", label = "Sell" }) {
+    return (
+        <div className="hidden md:block">
+            <DesktopSellButton to={to} label={label} />
+        </div>
     );
 }

@@ -18,6 +18,8 @@ export const CANCEL_REASONS = [
     { code: "other", label: "Other reason" },
 ];
 
+export const SELLER_RESPONSE_WINDOW_LABEL = "24 hours"; // display only — real value is seller_response_hours() in SQL
+
 export const MAX_CANCEL_TEXT = 500;
 
 export const DISPUTE_CATEGORIES = [

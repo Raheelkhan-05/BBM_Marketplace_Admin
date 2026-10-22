@@ -1,0 +1,152 @@
+/* src/components/save/save-cart.css
+   Item selection + "Explore more products" for SaveCartPage. Uses the variables from save.css. */
+
+/* checkbox with a 44px tap target */
+.sv .sh-pick {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 44px;
+    min-height: 44px;
+    margin: 0;
+    flex: none;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.sv .sh-pick input {
+    width: 20px;
+    height: 20px;
+    margin: 0 12px 0 12px;
+    cursor: pointer;
+    accent-color: var(--gt, #1a7f4b);
+}
+
+.sv .sh-pick input:disabled {
+    cursor: not-allowed;
+}
+
+.sv .sh-pick span {
+    margin-left: -4px;
+    font-weight: 700;
+    font-size: .92rem;
+    color: var(--ink);
+}
+
+/* "Select all" bar */
+.sv .sh-selbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 14px;
+    padding-right: 16px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--s);
+}
+
+.sv .sh-selcnt {
+    font-size: .82rem;
+    font-weight: 600;
+    color: var(--ink);
+    opacity: .7;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* item row = checkbox + existing item body */
+.sv .sh-cirow {
+    display: flex;
+    align-items: flex-start;
+}
+
+.sv .sh-cirow>.sh-pick {
+    margin-top: 4px;
+    margin-left: -12px;
+}
+
+.sv .sh-cibody {
+    flex: 1;
+    min-width: 0;
+}
+
+.sv .sh-ci.off .sh-cim {
+    opacity: .5;
+    transition: opacity .15s;
+}
+
+/* seller header: "n of m selected" + blue Select all / Unselect all link */
+.sv .sh-chm {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+}
+
+.sv .sh-sela {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    padding: 6px 0;
+    font: inherit;
+    font-size: .84rem;
+    font-weight: 700;
+    color: #1A5FD0;
+    cursor: pointer;
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.sv .sh-sela:hover:not(:disabled) {
+    text-decoration: underline;
+}
+
+.sv .sh-sela:focus-visible {
+    outline: 2px solid #1A5FD0;
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+.sv .sh-sela:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+}
+
+.sv .sh-muted {
+    font-size: .8rem;
+    font-weight: 600;
+    opacity: .6;
+}
+
+/* secondary "Explore more products" button */
+.sv .sh-explore {
+    width: 100%;
+    min-height: 48px;
+    margin-top: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 18px;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    background: var(--s);
+    color: var(--ink);
+    font-weight: 700;
+    cursor: pointer;
+    transition: background .2s, transform .15s;
+}
+
+.sv .sh-explore:hover:not(:disabled) {
+    background: var(--s2);
+}
+
+.sv .sh-explore:active:not(:disabled) {
+    transform: scale(.98);
+}
+
+.sv .sh-explore:disabled {
+    opacity: .6;
+    cursor: not-allowed;
+}

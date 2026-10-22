@@ -1,0 +1,759 @@
+/* grow-bulk.css — bulk upload page. Import AFTER grow-start.css / grow-extras.css / grow-access.css.
+   The page renders inside the seller shell (.gsl), so it brings its own .gl root (class "gl gbk")
+   so every `.gl .gs ...` rule from grow-start.css applies, and defines the variables itself. */
+
+/* ---------- root: variables + undo .gl's full-page layout (it is nested in the seller shell) ---------- */
+.gl.gbk {
+    --bg: #FFFFFF;
+    --line: #DFE7EA;
+    --ink: #08222B;
+    --mute: #52686F;
+    --orange: #F4511E;
+    --blue: #1E78D6;
+    --green: #22A06B;
+    --gold: #FFD60A;
+    --f: "Figtree", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    min-height: 0;
+    padding: 0;
+    background: none;
+    overflow: visible;
+    font: 500 16px/1.5 var(--f);
+}
+
+.gl.gbk .gs {
+    padding-top: 14px;
+}
+
+/* container (replaces .app, which the seller shell also styles) */
+.gl .gs .bk-wrap {
+    width: 100%;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 0 2px 24px;
+}
+
+.gl .gs .bk-wrap.hb {
+    padding-bottom: 120px;
+}
+
+/* the seller shell gives every .f a top margin; keep the grow-start spacing instead */
+.gl .gs .f {
+    margin-top: 0;
+}
+
+.gl .gs .bar {
+    z-index: 45;
+}
+
+/* ---------- steps ---------- */
+.gl .gs .bk-step {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    margin-top: 12px;
+    padding: 18px;
+}
+
+.gl .gs .bk-step h3,
+.gl .gs .bk-h3 {
+    font: 800 1.05rem var(--f);
+    color: var(--ink);
+    margin: 0 0 4px;
+    letter-spacing: -.01em;
+}
+
+.gl .gs .bk-step p {
+    color: var(--mute);
+    font-size: .92rem;
+    margin: 0 0 12px;
+}
+
+.gl .gs .bk-step .sbtn {
+    margin-top: 2px;
+}
+
+.gl .gs .bk-n {
+    flex: none;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--ink);
+    color: #fff;
+    font-weight: 800;
+}
+
+.gl .gs .bk-resume {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 18px;
+    padding: 14px 16px;
+    border: 1px solid #F2DC84;
+    border-radius: 18px;
+    background: #FFF9DB;
+}
+
+.gl .gs .bk-resume b {
+    display: block;
+    font-weight: 800;
+}
+
+.gl .gs .bk-resume small {
+    color: #8A6500;
+    font-size: .9rem;
+    line-height: 0.5 !important;
+    font-weight: 600;
+}
+
+.gl .gs .bk-ra {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* ---------- summary ---------- */
+.gl .gs .bk-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.gl .gs .bk-stats>div {
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: #fff;
+    padding: 14px 10px;
+    text-align: center;
+}
+
+.gl .gs .bk-stats b {
+    display: block;
+    font: 900 1.7rem var(--f);
+    line-height: 1.1;
+}
+
+.gl .gs .bk-stats small {
+    color: var(--mute);
+    font-weight: 700;
+    font-size: .8rem;
+}
+
+.gl .gs .bk-stats .ok {
+    background: #EAF7F1;
+    border-color: #BFE6D3;
+}
+
+.gl .gs .bk-stats .ok b {
+    color: var(--gt);
+}
+
+.gl .gs .bk-stats .bad {
+    background: #FDE9E2;
+    border-color: #F5C4B6;
+}
+
+.gl .gs .bk-stats .bad b {
+    color: #C23A0B;
+}
+
+.gl .gs .bk-errs details {
+    border-top: 1px solid var(--line);
+    padding: 10px 0;
+}
+
+.gl .gs .bk-errs summary {
+    cursor: pointer;
+    font-weight: 700;
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.gl .gs .bk-errs summary em {
+    font-style: normal;
+    color: #C23A0B;
+    font-size: .85rem;
+    flex: none;
+}
+
+.gl .gs .bk-errs ul {
+    margin: 8px 0 2px;
+    padding-left: 18px;
+    color: var(--mute);
+    font-size: .9rem;
+}
+
+.gl .gs .bk-errs li {
+    margin-bottom: 4px;
+}
+
+.gl .gs .bk-errs li b {
+    color: var(--ink);
+}
+
+/* ---------- review ---------- */
+.gl .gs .bk-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+}
+
+.gl .gs .bk-top-r {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.gl .gs .bk-top .lnk {
+    padding: 6px 2px;
+}
+
+.gl .gs .bk-save {
+    font-size: .78rem;
+    font-weight: 700;
+    color: var(--gt);
+}
+
+.gl .gs .bk-save.saving {
+    color: var(--mute);
+}
+
+.gl .gs .bk-save.error {
+    color: #C23A0B;
+}
+
+.gl .gs .bk-chips {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding: 2px 0 8px;
+    margin-bottom: 4px;
+    scrollbar-width: thin;
+}
+
+.gl .gs .bk-chips button {
+    flex: none;
+    min-width: 36px;
+    height: 36px;
+    padding: 0 8px;
+    border-radius: 12px;
+    border: 1.5px solid var(--line);
+    background: #fff;
+    font: 800 .85rem var(--f);
+    color: var(--mute);
+    cursor: pointer;
+}
+
+.gl .gs .bk-chips button.cur {
+    border-color: var(--ink);
+    background: var(--ink);
+    color: #fff;
+}
+
+.gl .gs .bk-chips button.submitted {
+    background: var(--gr);
+    border-color: var(--gr);
+    color: #fff;
+}
+
+.gl .gs .bk-chips button.skipped {
+    background: #F3F4F6;
+    color: #9AAAB0;
+}
+
+.gl .gs .bk-chips button:disabled {
+    cursor: default;
+}
+
+.gl .gs .bk-banner {
+    margin: 12px 0;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: #FDE9E2;
+    color: #C23A0B;
+    font-size: .9rem;
+}
+
+.gl .gs .bk-banner ul {
+    margin: 6px 0 0;
+    padding-left: 18px;
+    font-weight: 600;
+}
+
+.gl .gs .bk-form {
+    display: grid;
+    gap: 14px;
+    margin-top: 14px;
+}
+
+.gl .gs .bk-sec {
+    scroll-margin-top: 84px;
+}
+
+.gl .gs .bk-sec.bad {
+    border-color: #F5C4B6;
+}
+
+.gl .gs .bk-sh {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: flex-start;
+    margin-bottom: 14px;
+}
+
+.gl .gs .bk-sh h3 {
+    font: 800 1.15rem var(--f);
+    margin: 0;
+    color: var(--ink);
+    letter-spacing: -.01em;
+}
+
+.gl .gs .bk-sh p {
+    margin: 2px 0 0;
+    color: var(--mute);
+    font-size: .88rem;
+}
+
+.gl .gs .bk-flag {
+    flex: none;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #FDE9E2;
+    color: #C23A0B;
+    font-size: .72rem;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+.gl .gs .bk-sec>.cap.err {
+    margin: 0 0 8px;
+}
+
+.gl .gs .bk-rm {
+    display: block;
+    margin: 18px auto 0;
+    color: #C23A0B;
+}
+
+/* ===== APPEND THIS TO THE END OF grow-bulk.css ===== */
+
+/* summary: amber "small fix" card (not red: nothing is rejected any more) */
+.gl .gs .bk-stats .warn {
+    background: #FFF6DB;
+    border-color: #F2DC84;
+}
+
+.gl .gs .bk-stats .warn b {
+    color: #8A6500;
+}
+
+.gl .gs .bk-errs summary em {
+    color: #8A6500;
+}
+
+.gl .gs .bk-errs summary em.mute {
+    color: var(--mute);
+}
+
+/* a product number with a small orange dot = something still missing */
+.gl .gs .bk-chips button {
+    position: relative;
+}
+
+.gl .gs .bk-chips button.flag:not(.cur)::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--orange);
+    border: 1.5px solid #fff;
+}
+
+/* live to-do list */
+.gl .gs .bk-todo {
+    margin: 12px 0;
+    padding: 14px 16px;
+    border-radius: 16px;
+    background: #FFF3EC;
+    border: 1px solid #F8CDB9;
+    color: var(--ink);
+}
+
+.gl .gs .bk-todo.ok {
+    background: #EAF7F1;
+    border-color: #BFE6D3;
+    color: #12794A;
+}
+
+.gl .gs .bk-todo>b {
+    display: block;
+    font-weight: 800;
+}
+
+.gl .gs .bk-todo>small {
+    display: block;
+    color: var(--mute);
+    font-weight: 600;
+    margin-top: 2px;
+}
+
+.gl .gs .bk-todo-l {
+    display: grid;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.gl .gs .bk-todo-l button {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    text-align: left;
+    width: 100%;
+    padding: 9px 12px;
+    border-radius: 12px;
+    border: 1px solid #F3D3C3;
+    background: #fff;
+    font: 600 .9rem/1.35 var(--f);
+    color: var(--ink);
+    cursor: pointer;
+}
+
+.gl .gs .bk-todo-l button:hover {
+    border-color: var(--orange);
+}
+
+.gl .gs .bk-todo-l i {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--orange);
+    color: #fff;
+    font: 800 .75rem var(--f);
+    font-style: normal;
+}
+
+/* field level guidance */
+.gl .gs .f {
+    position: relative;
+}
+
+.gl .gs .f.bk-bad>label {
+    color: #C23A0B;
+}
+
+.gl .gs .f.bk-bad .inp,
+.gl .gs .f.bk-bad .gx-sel,
+.gl .gs .f.bk-bad .ph,
+.gl .gs .f.bk-bad .gx-drop {
+    border-color: #E5694A;
+    box-shadow: 0 0 0 3px rgba(229, 105, 74, .14);
+}
+
+.gl .gs .f.bk-bad .chips {
+    padding: 4px;
+    margin: -4px;
+    border-radius: 14px;
+    box-shadow: 0 0 0 2px rgba(229, 105, 74, .35);
+}
+
+.gl .gs .f.bk-next {
+    scroll-margin-top: 90px;
+}
+
+.gl .gs .f.bk-next:not(.bk-bad) .inp,
+.gl .gs .f.bk-next:not(.bk-bad) .ph {
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px rgba(30, 120, 214, .16);
+}
+
+.gl .gs .f.bk-next:not(.bk-bad) .chips {
+    padding: 4px;
+    margin: -4px;
+    border-radius: 14px;
+    box-shadow: 0 0 0 2px rgba(30, 120, 214, .35);
+}
+
+.gl .gs .bk-nx {
+    position: absolute;
+    top: -2px;
+    right: 0;
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: var(--blue);
+    color: #fff;
+    font: 800 .68rem var(--f);
+    letter-spacing: .03em;
+    text-transform: uppercase;
+}
+
+.gl .gs .bk-bad-box {
+    border-radius: 14px;
+}
+
+.gl .gs .bk-sec.bad {
+    border-color: #F5C4B6;
+}
+
+/* ===== grow-bulk.additions.css  (v2) =====
+   If you already pasted the first version of this block at the end of grow-bulk.css,
+   DELETE that block and paste this one in its place. */
+
+/* summary: four cards */
+.gl .gs .bk-stats {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+}
+
+.gl .gs .bk-stats>div {
+    padding: 12px 6px;
+}
+
+.gl .gs .bk-stats small {
+    font-size: .74rem;
+    line-height: 1.2;
+    display: block;
+}
+
+.gl .gs .bk-stats .warn {
+    background: #FFF6DB;
+    border-color: #F2DC84;
+}
+
+.gl .gs .bk-stats .warn b {
+    color: #8A6500;
+}
+
+.gl .gs .bk-stats .skip {
+    background: #F3F4F6;
+    border-color: #DADFE2;
+}
+
+.gl .gs .bk-stats .skip b {
+    color: #52686F;
+}
+
+.gl .gs .bk-errs summary em {
+    color: #8A6500;
+}
+
+.gl .gs .bk-errs summary em.mute {
+    color: var(--mute);
+}
+
+/* "left out" list */
+.gl .gs .bk-dups ul {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+}
+
+.gl .gs .bk-dups li {
+    display: grid;
+    gap: 2px;
+    padding: 10px 0;
+    border-top: 1px solid var(--line);
+}
+
+.gl .gs .bk-dups li b {
+    font-weight: 800;
+    overflow-wrap: anywhere;
+}
+
+.gl .gs .bk-dups li span {
+    color: var(--mute);
+    font-size: .88rem;
+}
+
+/* a product number with a small orange dot = something still missing */
+.gl .gs .bk-chips button {
+    position: relative;
+}
+
+.gl .gs .bk-chips button.flag:not(.cur)::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--orange);
+    border: 1.5px solid #fff;
+}
+
+/* live to-do list */
+.gl .gs .bk-todo {
+    margin: 12px 0;
+    padding: 14px 16px;
+    border-radius: 16px;
+    background: #FFF3EC;
+    border: 1px solid #F8CDB9;
+    color: var(--ink);
+}
+
+.gl .gs .bk-todo.ok {
+    background: #EAF7F1;
+    border-color: #BFE6D3;
+    color: #12794A;
+}
+
+.gl .gs .bk-todo>b {
+    display: block;
+    font-weight: 800;
+}
+
+.gl .gs .bk-todo>small {
+    display: block;
+    color: var(--mute);
+    font-weight: 600;
+    margin-top: 2px;
+}
+
+.gl .gs .bk-todo-l {
+    display: grid;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.gl .gs .bk-todo-l button {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    text-align: left;
+    width: 100%;
+    padding: 9px 12px;
+    border-radius: 12px;
+    border: 1px solid #F3D3C3;
+    background: #fff;
+    font: 600 .9rem/1.35 var(--f);
+    color: var(--ink);
+    cursor: pointer;
+}
+
+.gl .gs .bk-todo-l button:hover {
+    border-color: var(--orange);
+}
+
+.gl .gs .bk-todo-l i {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--orange);
+    color: #fff;
+    font: 800 .75rem var(--f);
+    font-style: normal;
+}
+
+/* field level guidance */
+.gl .gs .f {
+    position: relative;
+}
+
+.gl .gs .f.bk-bad>label {
+    color: #C23A0B;
+}
+
+.gl .gs .f.bk-bad .inp,
+.gl .gs .f.bk-bad .gx-sel,
+.gl .gs .f.bk-bad .gx-drop {
+    border-color: #E5694A;
+    box-shadow: 0 0 0 3px rgba(229, 105, 74, .14);
+}
+
+.gl .gs .f.bk-bad .chips {
+    padding: 4px;
+    margin: -4px;
+    border-radius: 14px;
+    box-shadow: 0 0 0 2px rgba(229, 105, 74, .35);
+}
+
+.gl .gs .f.bk-next {
+    scroll-margin-top: 90px;
+}
+
+.gl .gs .f.bk-next:not(.bk-bad) .inp {
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px rgba(30, 120, 214, .16);
+}
+
+.gl .gs .f.bk-next:not(.bk-bad) .chips {
+    padding: 4px;
+    margin: -4px;
+    border-radius: 14px;
+    box-shadow: 0 0 0 2px rgba(30, 120, 214, .35);
+}
+
+.gl .gs .bk-nx {
+    position: absolute;
+    top: -2px;
+    right: 0;
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: var(--blue);
+    color: #fff;
+    font: 800 .68rem var(--f);
+    letter-spacing: .03em;
+    text-transform: uppercase;
+}
+
+.gl .gs .bk-bad-box {
+    border-radius: 14px;
+}
+
+.gl .gs .bk-sec.bad {
+    border-color: #F5C4B6;
+}
+
+/* product photos: a tight frame around the tiles. The frame carries the highlight, so there is no empty
+   strip between the "+ Add" tile and the border. */
+.gl .gs .bk-photo {
+    padding: 10px;
+    border: 1.5px dashed var(--line);
+    border-radius: 16px;
+    background: #fff;
+    display: flow-root;
+    /* contains the tiles; no margin escapes below them */
+    transition: border-color .15s, box-shadow .15s;
+}
+
+.gl .gs .bk-photo .ph {
+    margin: 0;
+    padding: 0;
+    min-height: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+}
+
+.gl .gs .bk-photo .ph>* {
+    margin-bottom: 0;
+}
+
+.gl .gs .f.bk-next:not(.bk-bad) .bk-photo {
+    border: 1.5px solid var(--blue);
+    box-shadow: 0 0 0 3px rgba(30, 120, 214, .16);
+}
+
+.gl .gs .f.bk-bad .bk-photo {
+    border: 1.5px solid #E5694A;
+    box-shadow: 0 0 0 3px rgba(229, 105, 74, .14);
+}

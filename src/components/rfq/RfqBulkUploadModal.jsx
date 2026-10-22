@@ -71,7 +71,7 @@ export default function RfqBulkUploadModal({ token, onClose, onUploaded }) {
                 <div className="flex items-start justify-between gap-3 border-b px-4 py-3.5 sm:px-5" style={{ borderColor: C.hair }}>
                     <div>
                         <p className="text-[18px] font-extrabold tracking-wide" style={{ color: C.ink }}>Bulk upload enquiries</p>
-                        <p className="mt-0.5 text-[12px] font-medium tracking-wide" style={{ color: C.muted }}>Add up to {MAX_ROWS} enquiries from one CSV file.</p>
+                        {/* <p className="mt-0.5 text-[12px] font-medium tracking-wide" style={{ color: C.muted }}>Add up to {MAX_ROWS} enquiries from one CSV file.</p> */}
                     </div>
                     <button onClick={onClose} disabled={submitting} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full hover:bg-black/[0.05]">
                         <X className="h-4 w-4" style={{ color: C.muted }} />

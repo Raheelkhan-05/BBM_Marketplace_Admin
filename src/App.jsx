@@ -5,7 +5,7 @@ import { SocketProvider } from "./context/SocketContext.jsx";
 import { NotificationsProvider } from "./context/NotificationsContext.jsx";
 import AdminLayout from "./components/AdminLayout.jsx";
 import AuthPage from "./pages/AuthPage.jsx";
-
+import AppShell from "./components/AppShell.jsx";
 import AdminSellersPage from "./pages/admin/AdminSellersPage.jsx";
 import AdminSellerDetailPage from "./pages/admin/AdminSellerDetailPage.jsx";
 import AdminManageAdminsPage from "./pages/admin/AdminManageAdminsPage.jsx";
@@ -24,6 +24,7 @@ import AdminDisputeDetailPage from "./pages/admin/AdminDisputeDetailPage.jsx";
 import AdminRfqPage from "./pages/admin/AdminRfqPage.jsx";
 import AdminFinancePage from "./pages/admin/AdminFinancePage.jsx";
 import AdminGstinReportsPage from "./pages/admin/AdminGstinReportsPage.jsx";
+import AdminSellerListingsPage from "./pages/admin/AdminSellerListingsPage.jsx";
 
 function App() {
   return (
@@ -32,33 +33,36 @@ function App() {
         <NotificationsProvider>
           <BrowserRouter>
             <Routes>
-              <Route path="/login" element={<AdminAuthPage />} />
+              <Route element={<AppShell />}>
+                <Route path="/login" element={<AdminAuthPage />} />
 
-              {/* Redirect bare "/" to somewhere useful — the login-gated
+                {/* Redirect bare "/" to somewhere useful — the login-gated
                   routes below still all keep their ORIGINAL /admin/...
                   paths unchanged, so every link.link string already
                   sitting in the notifications table (and any that get
                   inserted going forward, unchanged) still resolves. */}
-              <Route path="/" element={<Navigate to="/listings" replace />} />
+                <Route path="/" element={<Navigate to="/listings" replace />} />
 
-              <Route element={<AdminLayout />}>
-                <Route path="/sellers" element={<AdminSellersPage />} />
-                <Route path="/sellers/:id" element={<AdminSellerDetailPage />} />
-                <Route path="/report" element={<AdminGstinReportsPage />} />
-                <Route path="/admins" element={<AdminManageAdminsPage />} />
-                <Route path="/catalog" element={<AdminCatalogReviewPage />} />
-                <Route path="/catalog/:level/:id" element={<AdminCatalogDetailPage />} />
-                <Route path="/listings" element={<AdminSellerSubmissionsPage />} />
-                <Route path="/payments" element={<PaymentVerificationPage />} />
-                <Route path="/catalog/bulk-upload" element={<AdminFullCatalogUploadPage />} />
-                <Route path="/wallets" element={<AdminWalletSellersPage />} />
-                <Route path="/database" element={<AdminDatabasePanel />} />
-                <Route path="/product-commisions" element={<AdminProductCommissionsPage />} />
-                <Route path="/support" element={<AdminHelpRequestsPage />} />
-                <Route path="/disputes" element={<AdminDisputesPage />} />
-                <Route path="/disputes/:id" element={<AdminDisputeDetailPage />} />
-                <Route path="/rfqs" element={<AdminRfqPage />} />
-                <Route path="/finance" element={<AdminFinancePage />} />
+                <Route element={<AdminLayout />}>
+                  <Route path="/sellers" element={<AdminSellersPage />} />
+                  <Route path="/sellers/:id" element={<AdminSellerDetailPage />} />
+                  <Route path="/report" element={<AdminGstinReportsPage />} />
+                  <Route path="/admins" element={<AdminManageAdminsPage />} />
+                  <Route path="/catalog" element={<AdminCatalogReviewPage />} />
+                  <Route path="/catalog/:level/:id" element={<AdminCatalogDetailPage />} />
+                  <Route path="/listings" element={<AdminSellerSubmissionsPage />} />
+                  <Route path="/payments" element={<PaymentVerificationPage />} />
+                  <Route path="/catalog/bulk-upload" element={<AdminFullCatalogUploadPage />} />
+                  <Route path="/wallets" element={<AdminWalletSellersPage />} />
+                  <Route path="/database" element={<AdminDatabasePanel />} />
+                  <Route path="/product-commisions" element={<AdminProductCommissionsPage />} />
+                  <Route path="/support" element={<AdminHelpRequestsPage />} />
+                  <Route path="/disputes" element={<AdminDisputesPage />} />
+                  <Route path="/disputes/:id" element={<AdminDisputeDetailPage />} />
+                  <Route path="/rfqs" element={<AdminRfqPage />} />
+                  <Route path="/finance" element={<AdminFinancePage />} />
+                  <Route path="/seller-listings" element={<AdminSellerListingsPage />} />
+                </Route>
               </Route>
             </Routes>
           </BrowserRouter>

@@ -17,16 +17,19 @@ import { ArrowLeft, Package, MapPin, Loader2, CheckCircle2, Circle, XCircle, Rad
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useNotifications } from "../context/NotificationsContext.jsx";
-import { fetchOrderById, cancelMyOrder } from "../utils/api.js";
+import { fetchOrderById } from "../utils/api.js";
+import DisputePanel from "../components/orders/DisputePanel.jsx";
+import { CancelOrderControl } from "../components/orders/PurchaseCardActions.jsx";
 import useRealtimeOrder from "../hooks/useRealtimeOrder.js";
 import { C, EASE } from "../components/catalog/tokens";
 import TransportInfoCard from "../components/orders/TransportInfoCard.jsx";
 import PurchaseOrderDocument from "../components/orders/PurchaseOrderDocument.jsx";
-import { StatusChip, SampleBadge, ItemQuantityLine, DeliveryEstimate, displayAmount, StockShortfallNote, shouldShowDelivery, shouldShowShortfall, basisLabel } from "../components/orders/OrderDisplayHelpers.jsx";
+import { StatusChip, displayStatus, SampleBadge, ItemQuantityLine, DeliveryEstimate, displayAmount, StockShortfallNote, shouldShowDelivery, shouldShowShortfall, basisLabel, PaymentTermsBanner, FreightNotice } from "../components/orders/OrderDisplayHelpers.jsx";
+import OrderTimingNote from "../components/orders/OrderTimingNote.jsx";
 
 const TIMELINE_STEPS = ["pending_confirmation", "confirmed", "shipped", "delivered"];
 
-function Timeline({ status, events }) {
+function Timeline({ status, events, autoRejected = false }) {
     const isTerminalBad = status === "cancelled" || status === "rejected";
     const currentIdx = TIMELINE_STEPS.indexOf(status);
     return (
@@ -51,7 +54,9 @@ function Timeline({ status, events }) {
             {isTerminalBad && (
                 <div className="flex gap-3">
                     <XCircle className="h-5 w-5" style={{ color: C.primary }} />
-                    <p className="text-[12.5px] font-bold tracking-wide" style={{ color: C.primary }}>{status === "cancelled" ? "Cancelled" : "Rejected by seller"}</p>
+                    <p className="text-[12.5px] font-bold tracking-wide" style={{ color: C.primary }}>
+                        {autoRejected ? "Not accepted — the seller didn't respond in 24 hours" : status === "cancelled" ? "Cancelled" : "Rejected by seller"}
+                    </p>
                 </div>
             )}
         </div>
@@ -125,6 +130,8 @@ export default function OrderDetailPage() {
 
     const fetcher = useCallback((orderId) => fetchOrderById(token, orderId), [token]);
     const { order, events, loading, reload } = useRealtimeOrder({ orderId: id, fetcher });
+    // console.log(order);
+
     // console.log("order.stock_shortfall:", order?.stock_shortfall, "| lead_time_snapshot:", order?.items?.[0]?.lead_time_snapshot);
 
     // Steps down the My Orders badge + Purchase Orders tab count for this
@@ -134,11 +141,6 @@ export default function OrderDetailPage() {
     }, [id, markOrderRead]);
 
     const deliveredEvent = events.find((e) => e.to_status === "delivered");
-
-    const handleCancel = async () => {
-        const res = await cancelMyOrder(token, id, "Cancelled by buyer");
-        if (res?.success) reload(); else window.alert(res?.message || "Couldn't cancel the order.");
-    };
 
     if (loading && !order) return <div className="flex min-h-[60vh] items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" style={{ color: C.muted }} /></div>;
     if (!order) return (
@@ -163,8 +165,14 @@ export default function OrderDetailPage() {
                     </div>
                     <p className="flex items-center gap-1 text-[12px] font-semibold tracking-wider" style={{ color: C.muted }}><Radio className="h-2.5 w-2.5 animate-pulse" style={{ color: "#059669" }} /> Live</p>
                 </div>
-                <StatusChip status={order.status} size="lg" />
+                <StatusChip status={displayStatus(order)} size="lg" />
             </div>
+
+            {/* Credit orders only — advance payment is a seller-only concern */}
+            <PaymentTermsBanner order={order} viewer="buyer" standalone />
+            <OrderTimingNote order={order} viewer="buyer" className="mt-3" />
+
+            <FreightNotice order={order} viewer="buyer" className="mt-3" />
 
             {order.seller && (
                 <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: EASE }}
@@ -177,9 +185,12 @@ export default function OrderDetailPage() {
                         {(order.seller.city || order.seller.state) && (
                             <p className="text-[12.5px] font-semibold tracking-wider" style={{ color: C.muted }}>{[order.seller.city, order.seller.state].filter(Boolean).join(", ")}</p>
                         )}
+                        {order.seller.business?.gstin && (
+                            <p className="text-[11.5px] font-bold tracking-wider" style={{ color: C.muted }}>GSTIN: {order.seller.business.gstin}</p>
+                        )}
                     </div>
                     {order.seller.shop_slug && (
-                        <Link to={`/shop/${order.seller.shop_slug}`} onClick={(e) => e.stopPropagation()} className="shrink-0 rounded-lg border px-3 py-1.5 text-[11.5px] font-bold tracking-wider" style={{ borderColor: C.hair, color: C.secondary }}>
+                        <Link to={`/home/?shop=${order.seller.shop_slug}`} onClick={(e) => e.stopPropagation()} className="shrink-0 rounded-lg border px-3 py-1.5 text-[11.5px] font-bold tracking-wider" style={{ borderColor: C.hair, color: C.secondary }}>
                             View shop
                         </Link>
                     )}
@@ -187,7 +198,7 @@ export default function OrderDetailPage() {
             )}
 
             <Card title="Order status">
-                <Timeline status={order.status} events={events} />
+                <Timeline status={order.status} events={events} autoRejected={!!order.auto_rejected_at} />
             </Card>
 
             {(shouldShowDelivery(order, firstItem) || shouldShowShortfall(order)) && (
@@ -238,9 +249,8 @@ export default function OrderDetailPage() {
                 </Card>
             )}
 
-            {order.status === "pending_confirmation" && (
-                <button onClick={handleCancel} className="mt-5 w-full rounded-xl border px-5 py-3 text-[13px] font-bold tracking-wide" style={{ borderColor: C.hair, color: C.primary }}>Cancel order</button>
-            )}
+            <DisputePanel order={order} viewer="buyer" onChanged={reload} />
+            <CancelOrderControl order={order} onCancelled={reload} className="mt-5" />
         </div>
     );
 }

@@ -1,0 +1,1000 @@
+/* src/components/grow/grow-access.css
+   Self-contained: everything lives under .gax and is prefixed gax-, so it works both inside the
+   .gl .gs wizard and inside the products-page Sheet. Tokens mirror grow-start.css. */
+
+.gax {
+    --g-ink: var(--ink, #0B1116);
+    --g-line: var(--line, #E3E6EA);
+    --g-gold: var(--gold, #FFD60A);
+    --g-mute: #586E75;
+    --g-soft: #F3F8F9;
+    --g-blue: #0F63B5;
+    --g-or: #F4511E;
+    --g-gr: #22A06B;
+    --g-gt: #12794A;
+    --g-red: #C0341D;
+    font: 500 16px/1.5 var(--f, inherit);
+    color: var(--g-ink);
+    min-width: 0
+}
+
+.gax * {
+    box-sizing: border-box;
+    margin: 0
+}
+
+.gax button {
+    font-family: inherit
+}
+
+/* ---------- fields ---------- */
+.gax-f {
+    margin-bottom: 16px;
+    min-width: 0
+}
+
+.gax-f>label,
+.gax-lb {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: .78rem;
+    font-weight: 800;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: #46606A;
+    margin-bottom: 8px
+}
+
+.gax-f.bad>label {
+    color: var(--g-red)
+}
+
+.gax-cap {
+    font-size: .88rem;
+    color: var(--g-mute);
+    margin-top: 8px
+}
+
+.gax-cap.err {
+    color: var(--g-red);
+    font-weight: 600
+}
+
+.gax-inp {
+    display: flex;
+    align-items: center;
+    border: 1.5px solid var(--g-line);
+    border-radius: 14px;
+    background: #fff;
+    transition: border-color .2s, box-shadow .2s;
+    min-width: 0
+}
+
+.gax-inp:focus-within {
+    border-color: #9FB3BA
+}
+
+.gax-f.bad .gax-inp {
+    border-color: var(--g-red)
+}
+
+.gax-inp input {
+    flex: 1;
+    min-width: 0;
+    height: 50px;
+    border: 0;
+    outline: 0;
+    background: none;
+    padding: 0 14px;
+    font: 600 1rem var(--f, inherit);
+    color: var(--g-ink)
+}
+
+.gax-inp input::placeholder {
+    color: #9AAAB0;
+    font-weight: 500
+}
+
+.gax-inp .pre,
+.gax-inp .suf {
+    font-weight: 800;
+    color: var(--g-mute)
+}
+
+.gax-inp .pre {
+    padding-left: 14px
+}
+
+.gax-inp .suf {
+    padding-right: 14px
+}
+
+.gax-inp .pre+input {
+    padding-left: 6px
+}
+
+.gax-inp.ro {
+    background: var(--g-soft)
+}
+
+.gax-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px
+}
+
+.gax-chip {
+    border: 1.5px solid var(--g-line);
+    background: #fff;
+    color: var(--g-mute);
+    border-radius: 999px;
+    min-height: 42px;
+    padding: 0 16px;
+    font: 700 .92rem var(--f, inherit);
+    cursor: pointer;
+    transition: all .15s
+}
+
+.gax-chip[aria-pressed=true] {
+    background: var(--g-ink);
+    border-color: var(--g-ink);
+    color: #fff
+}
+
+.gax-chip.ok[aria-pressed=true] {
+    background: #059669;
+    border-color: #059669
+}
+
+.gax-chip.warn[aria-pressed=true] {
+    background: #A16207;
+    border-color: #A16207
+}
+
+.gax-chip:disabled {
+    opacity: .55;
+    cursor: default
+}
+
+.gax-two {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px
+}
+
+.gax-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px
+}
+
+.gax-grid .gax-f {
+    margin: 0
+}
+
+/* ---------- banners ---------- */
+.gax-sum {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    margin: 0 0 14px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: #E3F5EC;
+    color: var(--g-gt);
+    font-size: .88rem;
+    font-weight: 700;
+    line-height: 1.4
+}
+
+.gax-sum.warn {
+    background: #FFF4C2;
+    color: #8A6500
+}
+
+.gax-sum.err {
+    background: #FDE9E2;
+    color: #C23A0B
+}
+
+.gax-sum.info {
+    background: #E6F0FB;
+    color: #0F63B5
+}
+
+.gax-fixed {
+    background: var(--g-soft);
+    border-radius: 14px;
+    padding: 12px 14px;
+    margin-bottom: 16px
+}
+
+.gax-fixed small {
+    display: block;
+    font-size: .74rem;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--g-mute)
+}
+
+.gax-fixed b {
+    font-weight: 700
+}
+
+/* ---------- buyer search ---------- */
+.gax-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border: 1.5px solid var(--g-line);
+    border-radius: 14px;
+    padding: 0 12px;
+    background: #fff
+}
+
+.gax-search:focus-within {
+    border-color: #9FB3BA
+}
+
+.gax-search svg {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: var(--g-mute);
+    stroke-width: 2;
+    stroke-linecap: round
+}
+
+.gax-search input {
+    flex: 1;
+    min-width: 0;
+    height: 50px;
+    border: 0;
+    outline: 0;
+    background: none;
+    font: 600 1rem var(--f, inherit);
+    color: var(--g-ink)
+}
+
+.gax-x {
+    border: 0;
+    background: none;
+    cursor: pointer;
+    font-size: 20px;
+    line-height: 1;
+    color: var(--g-mute);
+    padding: 6px
+}
+
+.gax-pop {
+    margin-top: 8px;
+    border: 1px solid var(--g-line);
+    border-radius: 14px;
+    background: #fff;
+    overflow: hidden
+}
+
+.gax-list {
+    max-height: 244px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch
+}
+
+.gax-opt {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 54px;
+    padding: 8px 12px;
+    border: 0;
+    border-bottom: 1px solid #F0F1F4;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+    color: inherit
+}
+
+.gax-opt:last-child {
+    border-bottom: 0
+}
+
+.gax-opt:hover {
+    background: #F6F7F9
+}
+
+.gax-opt .t {
+    flex: 1;
+    min-width: 0
+}
+
+.gax-opt b,
+.gax-opt small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap
+}
+
+.gax-opt b {
+    font-weight: 700
+}
+
+.gax-opt small {
+    font-size: .8rem;
+    color: var(--g-mute);
+    font-weight: 500
+}
+
+.gax-opt .plus {
+    flex: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: #FDE9E2;
+    color: #C23A0B;
+    font-weight: 800
+}
+
+.gax-msg {
+    padding: 14px;
+    text-align: center;
+    font-size: .85rem;
+    color: var(--g-mute)
+}
+
+/* ---------- buyer cards ---------- */
+.gax-av {
+    flex: none;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    background: linear-gradient(135deg, #006F83, #4FA3B0);
+    color: #fff;
+    font-size: .78rem;
+    font-weight: 800
+}
+
+.gax-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 14px
+}
+
+.gax-card {
+    border: 1px solid var(--g-line);
+    border-radius: 18px;
+    background: #fff;
+    overflow: hidden
+}
+
+.gax-card.open {
+    box-shadow: 0 14px 34px -26px rgba(8, 34, 43, .5)
+}
+
+.gax-ch {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 12px 14px;
+    border: 0;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+    color: inherit
+}
+
+.gax-ch .t {
+    flex: 1;
+    min-width: 0
+}
+
+.gax-ch b,
+.gax-ch small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap
+}
+
+.gax-ch b {
+    font-weight: 800;
+    font-size: .98rem
+}
+
+.gax-ch small {
+    font-size: .82rem;
+    color: var(--g-mute);
+    font-weight: 600
+}
+
+.gax-ch small.pr {
+    color: var(--g-gt);
+    font-weight: 700
+}
+
+.gax-ch small.pr.up {
+    color: #A16207
+}
+
+.gax-cv {
+    flex: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--g-soft);
+    display: grid;
+    place-items: center;
+    transition: transform .25s
+}
+
+.gax-cv::after {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-right: 2.5px solid var(--g-ink);
+    border-bottom: 2.5px solid var(--g-ink);
+    transform: rotate(45deg) translate(-1px, -1px)
+}
+
+.open>.gax-ch .gax-cv,
+.open>.gax-sh .gax-cv {
+    transform: rotate(180deg)
+}
+
+.gax-cb {
+    padding: 14px;
+    border-top: 1px solid var(--g-line);
+    display: flex;
+    flex-direction: column;
+    gap: 12px
+}
+
+.gax-pill {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #FEF3C7;
+    color: #A16207;
+    font-size: .66rem;
+    font-weight: 800;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    vertical-align: middle
+}
+
+.gax-pill.red {
+    background: #FDE9E2;
+    color: #C23A0B;
+    letter-spacing: 0;
+    text-transform: none;
+    font-size: .74rem
+}
+
+.gax-prev {
+    display: grid;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: var(--g-soft)
+}
+
+.gax-prev div {
+    text-align: center;
+    min-width: 0
+}
+
+.gax-prev small {
+    display: block;
+    font-size: .74rem;
+    font-weight: 700;
+    color: var(--g-mute)
+}
+
+.gax-prev s {
+    display: block;
+    font-size: .78rem;
+    font-weight: 600;
+    color: var(--g-mute)
+}
+
+.gax-prev b {
+    display: block;
+    font-size: 1rem;
+    font-weight: 800;
+    color: #059669
+}
+
+.gax-prev b.up {
+    color: #A16207
+}
+
+/* ---------- buttons ---------- */
+.gax-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 40px;
+    padding: 0 14px;
+    border: 1.5px solid var(--g-line);
+    border-radius: 12px;
+    background: #fff;
+    color: var(--g-ink);
+    font: 700 .85rem var(--f, inherit);
+    cursor: pointer;
+    align-self: flex-start
+}
+
+.gax-btn.del {
+    color: #C23A0B
+}
+
+.gax-btn:disabled {
+    opacity: .55;
+    cursor: default
+}
+
+.gax-go,
+.gax-gh {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 50px;
+    padding: 0 24px;
+    border-radius: 999px;
+    border: 0;
+    font: 800 1rem var(--f, inherit);
+    cursor: pointer;
+    transition: transform .15s, box-shadow .2s
+}
+
+.gax-go {
+    background: var(--g-gold);
+    color: var(--g-ink)
+}
+
+.gax-gh {
+    background: #fff;
+    border: 1.5px solid var(--g-line);
+    color: var(--g-ink)
+}
+
+.gax-go:hover {
+    box-shadow: 0 10px 22px -12px rgba(8, 34, 43, .55)
+}
+
+.gax-go:active,
+.gax-gh:active {
+    transform: scale(.98)
+}
+
+.gax-go:disabled {
+    background: #E6ECEE;
+    color: #8FA1A7;
+    box-shadow: none;
+    cursor: not-allowed
+}
+
+.gax-dash {
+    border: 1.5px dashed #B7C6CB;
+    background: #fff;
+    border-radius: 14px;
+    min-height: 46px;
+    padding: 0 16px;
+    font: 700 .9rem var(--f, inherit);
+    color: var(--g-ink);
+    cursor: pointer
+}
+
+/* ---------- slabs ---------- */
+.gax-slab {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px;
+    gap: 8px;
+    align-items: end;
+    margin-bottom: 12px
+}
+
+.gax-slab>span {
+    display: block;
+    font-size: .74rem;
+    font-weight: 700;
+    color: var(--g-mute);
+    margin-bottom: 5px
+}
+
+.gax-slab .gax-x {
+    height: 50px;
+    width: 44px;
+    border: 1px solid var(--g-line);
+    border-radius: 12px;
+    color: #C23A0B
+}
+
+.gax-slab p {
+    grid-column: 1/-1;
+    font-size: .82rem;
+    font-weight: 600;
+    color: var(--g-gt)
+}
+
+/* ---------- edit sheet ---------- */
+.gax-edit {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-height: calc(100dvh - 72px);
+    background: #fff
+}
+
+.gax-eh {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 64px 12px 18px;
+    /* right gap keeps clear of the Sheet's own close button */
+    border-bottom: 1px solid var(--g-line)
+}
+
+.gax-eh>div {
+    flex: 1;
+    min-width: 0
+}
+
+.gax-eh h3 {
+    font-size: 1.15rem;
+    font-weight: 800;
+    letter-spacing: -.01em
+}
+
+.gax-eh p {
+    font-size: .82rem;
+    font-weight: 700;
+    color: var(--g-mute);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap
+}
+
+.gax-eh .gax-x {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: var(--g-soft);
+    display: grid;
+    place-items: center;
+    padding: 0
+}
+
+.gax-eb {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding: 16px 18px 20px
+}
+
+.gax-ef {
+    flex: none;
+    display: flex;
+    gap: 10px;
+    padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--g-line);
+    background: rgba(255, 255, 255, .96)
+}
+
+.gax-ef .gax-go {
+    flex: 1.5
+}
+
+.gax-ef .gax-gh {
+    flex: 1
+}
+
+.gax-sec {
+    border: 1px solid var(--g-line);
+    border-radius: 20px;
+    background: #fff;
+    margin-bottom: 12px;
+    overflow: hidden;
+    scroll-margin-top: 8px
+}
+
+.gax-sh {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 14px 16px;
+    border: 0;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+    color: inherit
+}
+
+.gax-sh>span {
+    flex: 1;
+    min-width: 0
+}
+
+.gax-sh b {
+    display: block;
+    font-weight: 800;
+    font-size: 1.02rem
+}
+
+.gax-sh small {
+    display: block;
+    color: var(--g-mute);
+    font-size: .84rem;
+    font-weight: 500
+}
+
+.gax-sb {
+    padding: 16px;
+    border-top: 1px solid var(--g-line)
+}
+
+.gax-solo {
+    padding: 0
+}
+
+.gax-load {
+    display: flex;
+    flex-direction: column;
+    gap: 14px
+}
+
+.gax-skel {
+    height: 50px;
+    border-radius: 14px;
+    background: linear-gradient(90deg, #EEF0F3 25%, #F7F8FA 50%, #EEF0F3 75%);
+    background-size: 200% 100%;
+    animation: gax-sh 1.2s linear infinite
+}
+
+@keyframes gax-sh {
+    to {
+        background-position: -200% 0
+    }
+}
+
+.gax-legacy {
+    margin-bottom: 4px
+}
+
+@media (max-width:380px) {
+    .gax-two {
+        grid-template-columns: 1fr
+    }
+}
+
+@media (prefers-reduced-motion:reduce) {
+
+    .gax-skel,
+    .gax-cv,
+    .gax-chip {
+        animation: none;
+        transition: none
+    }
+}
+
+
+/* ================= polish pass ================= */
+/* no focus rings on text fields, anywhere inside the GROW flow */
+.gax input:focus,
+.gax input:focus-visible,
+.gax textarea:focus {
+    outline: none;
+    box-shadow: none
+}
+
+.gs .inp:focus-within,
+.gs textarea:focus,
+.gs .otp input:focus {
+    box-shadow: none;
+    border-color: #9FB3BA
+}
+
+/* vertical rhythm: one gap controls everything, no stacked margins */
+.gax-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px
+}
+
+.gax-stack>* {
+    margin: 0
+}
+
+.gax-stack>.gax-f {
+    margin-bottom: 0
+}
+
+.gax-sum {
+    margin: 0;
+    line-height: 1.45
+}
+
+.gax-empty {
+    padding: 18px 14px;
+    border: 1.5px dashed var(--g-line);
+    border-radius: 16px;
+    text-align: center;
+    font-size: .9rem;
+    font-weight: 600;
+    color: var(--g-mute)
+}
+
+.gax-cards {
+    margin-top: 0;
+    gap: 12px
+}
+
+/* segmented controls (equal-width, same height everywhere) */
+.gax-chips.fill {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 6px;
+    padding: 4px;
+    border-radius: 16px;
+    background: var(--g-soft)
+}
+
+.gax-chips.fill .gax-chip {
+    min-height: 44px;
+    padding: 0 10px;
+    border-radius: 12px;
+    border-color: transparent;
+    background: transparent;
+    font-size: .88rem;
+    line-height: 1.2;
+    text-align: center
+}
+
+.gax-chips.fill .gax-chip[aria-pressed=true] {
+    background: var(--g-ink);
+    color: #fff
+}
+
+.gax-chips.fill .gax-chip.ok[aria-pressed=true] {
+    background: #059669
+}
+
+.gax-chips.fill .gax-chip.warn[aria-pressed=true] {
+    background: #A16207
+}
+
+/* buyer card */
+.gax-card {
+    transition: border-color .2s, box-shadow .2s
+}
+
+.gax-card.open {
+    border-color: #C9D3D7
+}
+
+.gax-ch {
+    padding: 14px 16px;
+    gap: 14px
+}
+
+.gax-ch .t {
+    display: flex;
+    flex-direction: column;
+    gap: 2px
+}
+
+.gax-ch b {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+    white-space: normal;
+    line-height: 1.25
+}
+
+.gax-ch b .gax-pill {
+    margin-left: 0
+}
+
+.gax-av {
+    width: 42px;
+    height: 42px;
+    border-radius: 14px
+}
+
+.gax-cb {
+    gap: 16px;
+    padding: 16px;
+    background: #FBFCFD
+}
+
+.gax-ed {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0
+}
+
+.gax-ed .gax-f {
+    margin: 0
+}
+
+.gax-ed .gax-sum {
+    margin: 0
+}
+
+.gax-grid {
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr))
+}
+
+.gax-grid .gax-f>label {
+    min-height: 2.4em;
+    align-items: flex-end;
+    line-height: 1.2;
+    font-size: .72rem;
+    letter-spacing: .07em
+}
+
+.gax-prev {
+    padding: 12px 14px;
+    gap: 10px
+}
+
+.gax-acts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 14px;
+    border-top: 1px solid var(--g-line)
+}
+
+.gax-acts .gax-btn {
+    flex: 1 1 150px;
+    align-self: stretch;
+    min-height: 42px
+}
+
+/* search results */
+.gax-pop {
+    margin-top: 8px;
+    box-shadow: 0 16px 36px -22px rgba(8, 34, 43, .45)
+}
+
+.gax-opt {
+    padding: 10px 14px;
+    gap: 12px
+}
+
+/* edit sheet sections */
+.gax-sb {
+    padding: 18px 16px 4px
+}
+
+.gax-sb>.gax-f:last-child {
+    margin-bottom: 14px
+}
+
+.gax-solo>.gax-stack {
+    padding-bottom: 4px
+}

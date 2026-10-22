@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight, ArrowLeft, Loader2, CheckCircle2, Upload, X, Image as ImageIcon,
@@ -16,6 +17,23 @@ import { extractColorsFromImage } from "../utils/colorExtract.js";
 import { STEPS, BUSINESS_TYPES, WEEKDAYS, guessBusinessType } from "../components/seller/fieldConfigs.js";
 import { lookupPincode } from "../utils/sellerListingApi.js";
 import { readPendingProductSubmission } from "./SellPublishProductPage.jsx";
+
+// Works out where this business dispatches from, using what's already on
+// their business (GST) profile: the separate dispatch address if they set
+// one up, otherwise the registered address. The dispatch district isn't
+// stored on the business profile, so for a separate dispatch address it's
+// left blank here and looked up from the pincode by the Operations step.
+function dispatchFromBusiness(bp) {
+  if (!bp) return {};
+  const useDispatch = bp.dispatch_same_as_registered === false && !!bp.dispatch_pincode;
+  const pincode = useDispatch ? bp.dispatch_pincode : bp.pincode;
+  if (!pincode) return {};
+  return {
+    dispatch_pincode: String(pincode),
+    dispatch_district: useDispatch ? "" : (bp.district || ""),
+    dispatch_state: useDispatch ? (bp.dispatch_state || bp.state || "") : (bp.state || ""),
+  };
+}
 
 export function SellerOnboardingForm({ onSubmitted }) {
   const { token } = useAuth();
@@ -39,21 +57,43 @@ export function SellerOnboardingForm({ onSubmitted }) {
   // this tab is still open on the onboarding form).
   useEffect(() => {
     if (sellerStatusLoading) return;
-    setForm((f) => ({
-      ...f,
-      contact_person: fetchedProfile?.name || f.contact_person || "",
-      whatsapp_number: fetchedProfile?.phone || f.whatsapp_number || "",
-      whatsapp_verified: !!fetchedProfile?.phone_verified,
-      original_verified_number: fetchedProfile?.phone_verified ? fetchedProfile.phone : null,
-      address: gstData?.registered_address || f.address || "",
-      pincode: gstData?.pincode || f.pincode || "",
-      city: gstData?.district || f.city || "",
-      state: gstData?.state || f.state || "",
-      pan: gstData?.pan || f.pan || "",
-      display_name: gstData?.trade_name || gstData?.legal_name || f.display_name || "",
-      business_type: f.business_type || guessBusinessType(gstData?.nature_of_business),
-      ...(liveSeller || {}),
-    }));
+    setForm((f) => {
+      // Dispatch location: keep whatever the seller already saved (or is
+      // typing); only when there's nothing yet, start from the business
+      // profile so they don't have to type it. Applied AFTER the
+      // liveSeller spread below, because a draft seller row has these
+      // fields as null and would otherwise wipe the prefill.
+      const existingPin = liveSeller?.dispatch_pincode || f.dispatch_pincode;
+      const prefill = dispatchFromBusiness(gstData);
+      const dispatchFields = existingPin
+        ? {
+          dispatch_pincode: existingPin,
+          dispatch_district: liveSeller?.dispatch_district || f.dispatch_district || "",
+          dispatch_state: liveSeller?.dispatch_state || f.dispatch_state || "",
+        }
+        : {
+          dispatch_pincode: prefill.dispatch_pincode || "",
+          dispatch_district: prefill.dispatch_district || "",
+          dispatch_state: prefill.dispatch_state || "",
+        };
+
+      return {
+        ...f,
+        contact_person: fetchedProfile?.name || f.contact_person || "",
+        whatsapp_number: fetchedProfile?.phone || f.whatsapp_number || "",
+        whatsapp_verified: !!fetchedProfile?.phone_verified,
+        original_verified_number: fetchedProfile?.phone_verified ? fetchedProfile.phone : null,
+        address: gstData?.registered_address || f.address || "",
+        pincode: gstData?.pincode || f.pincode || "",
+        city: gstData?.district || f.city || "",
+        state: gstData?.state || f.state || "",
+        pan: gstData?.pan || f.pan || "",
+        display_name: gstData?.trade_name || gstData?.legal_name || f.display_name || "",
+        business_type: f.business_type || guessBusinessType(gstData?.nature_of_business),
+        ...(liveSeller || {}),
+        ...dispatchFields,
+      };
+    });
   }, [sellerStatusLoading, fetchedProfile, gstData, liveSeller]);
 
   useEffect(() => {
@@ -77,7 +117,7 @@ export function SellerOnboardingForm({ onSubmitted }) {
   useEffect(() => {
     if (liveSeller?.status === "approved") {
       onSubmitted?.(liveSeller);
-      navigate("/seller/listings", { replace: true });
+      navigate("/seller/products", { replace: true });
     }
   }, [liveSeller?.status, liveSeller, onSubmitted, navigate]);
 
@@ -148,7 +188,7 @@ export function SellerOnboardingForm({ onSubmitted }) {
 
       // Seller is approved immediately now — no review screen, go
       // straight to the live seller dashboard.
-      navigate("/seller/listings", { replace: true });
+      navigate("/seller/products", { replace: true });
     } finally {
       setSubmitting(false);
     }
@@ -172,7 +212,7 @@ export function SellerOnboardingForm({ onSubmitted }) {
       </p>
 
       <div className="mt-3 h-[3px] w-full overflow-hidden rounded-full bg-[#047084]/10">
-        <motion.div className="h-full rounded-full" style={{ background: "linear-gradient(90deg,#0a95ab,#047084)" }}
+        <motion.div className="h-full rounded-full" style={{ background: "linear-gradient(90deg,#000000,#000000)" }}
           animate={{ width: `${progress}%` }} transition={{ duration: 0.4, ease: "easeOut" }} />
       </div>
 
@@ -194,13 +234,13 @@ export function SellerOnboardingForm({ onSubmitted }) {
           {stepIndex < STEPS.length - 1 ? (
             <button type="button" onClick={goNext} disabled={saving}
               className="flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[14.5px] font-bold tracking-wide text-white "
-              style={{ background: "linear-gradient(135deg, #d2462b 0%, #c71f11 100%)" }}>
+              style={{ background: "linear-gradient(135deg, #000000 0%, #000000 100%)" }}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Continue <ArrowRight className="h-4 w-4" /></>}
             </button>
           ) : (
             <button type="button" onClick={handleSubmit} disabled={submitting}
               className="flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[14.5px] font-bold tracking-wide text-white "
-              style={{ background: "linear-gradient(135deg, #d2462b 0%, #c71f11 100%)" }}>
+              style={{ background: "linear-gradient(135deg, #000000 0%, #000000 100%)" }}>
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Submit <CheckCircle2 className="h-4 w-4" /></>}
             </button>
           )}
@@ -443,6 +483,19 @@ function OperationsStep({ form, update }) {
     }
   };
 
+  // Handles the pincode that was prefilled from the business profile (and
+  // any complete 6-digit pincode as soon as it's typed). If the district
+  // and state are already known there's nothing to look up; otherwise
+  // resolve them from the pincode. Never runs while a lookup is in flight
+  // or after one has finished (status is no longer null).
+  useEffect(() => {
+    const pin = form.dispatch_pincode || "";
+    if (!/^\d{6}$/.test(pin) || pincodeStatus !== null) return;
+    if (form.dispatch_district && form.dispatch_state) setPincodeStatus("ok");
+    else confirmPincode(pin);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.dispatch_pincode, form.dispatch_district, form.dispatch_state, pincodeStatus]);
+
   const presetBtnClass = (active) =>
     `rounded-full border px-3 py-1 text-[12.5px] font-bold tracking-wide transition-colors ${active
       ? "border-[#047084] bg-[#047084] text-white"
@@ -452,29 +505,45 @@ function OperationsStep({ form, update }) {
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <div className="flex items-center justify-between">
-          <Label>Working days</Label>
-          <div className="flex gap-1.5">
-            <button type="button" onClick={() => update("working_days", [...WEEKDAYS])} className={presetBtnClass(isAllWeek)}>
+        {/* Label + presets on one line — presets styled as lightweight text links, not buttons */}
+        <Label>Working days</Label>
+        {/* <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5 text-[12px] mt-1 font-semibold tracking-wide">
+            <button type="button" onClick={() => update("working_days", [...WEEKDAYS])}
+              className={isAllWeek ? "text-[#047084]" : "text-slate-400 hover:text-slate-600"}>
               All days
             </button>
-            <button type="button" onClick={() => update("working_days", weekdaysOnly)} className={presetBtnClass(isWeekdaysOnly)}>
+            <span className="text-slate-300">·</span>
+            <button type="button" onClick={() => update("working_days", weekdaysOnly)}
+              className={isWeekdaysOnly ? "text-[#047084]" : "text-slate-400 hover:text-slate-600"}>
               Sun off
             </button>
-            <button type="button" onClick={() => update("working_days", [])} className={presetBtnClass(selected.length === 0)}>
+            <span className="text-slate-300">·</span>
+            <button type="button" onClick={() => update("working_days", [])}
+              className={selected.length === 0 ? "text-[#047084]" : "text-slate-400 hover:text-slate-600"}>
               Clear
             </button>
           </div>
-        </div>
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        </div> */}
+
+        {/* Day selector — circular toggles, evenly spaced, single-letter for compactness */}
+        <div className="mt-2 flex justify-between gap-1.5 sm:justify-start sm:gap-2">
           {WEEKDAYS.map((d) => {
             const active = selected.includes(d);
             return (
-              <button key={d} type="button"
+              <button
+                key={d}
+                type="button"
                 onClick={() => update("working_days", active ? selected.filter((x) => x !== d) : [...selected, d])}
-                className="rounded-lg border-2 px-3 py-1.5 text-[13.5px] font-bold tracking-wide"
-                style={{ borderColor: active ? "#047084" : "#e5e9ea", color: active ? "#047084" : "#64748b", background: active ? "#04708410" : "white" }}>
-                {d}
+                aria-pressed={active}
+                className="flex h-7 w-16 items-center justify-center rounded-xl text-[13px] font-bold tracking-wide transition-all duration-150"
+                style={{
+                  border: `2px solid ${active ? "#047084" : "#e5e9ea"}`,
+                  color: active ? "#ffffff" : "#64748b",
+                  background: active ? "#047084" : "white",
+                }}
+              >
+                {d.slice(0, 3)}
               </button>
             );
           })}
@@ -503,7 +572,7 @@ function OperationsStep({ form, update }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
         <TimeField label="Order acceptance starts" value={form.order_acceptance_start} onChange={(v) => update("order_acceptance_start", v)} />
         <TimeField label="Order acceptance ends" value={form.order_acceptance_end} onChange={(v) => update("order_acceptance_end", v)} />
       </div>
@@ -512,15 +581,17 @@ function OperationsStep({ form, update }) {
         <Label>Dispatch pincode</Label>
         <input
           value={form.dispatch_pincode || ""}
-          onChange={(e) => { update("dispatch_pincode", e.target.value.replace(/\D/g, "").slice(0, 6)); setPincodeStatus(null); }}
-          onBlur={(e) => confirmPincode(e.target.value)}
+          onChange={(e) => {
+            update("dispatch_pincode", e.target.value.replace(/\D/g, "").slice(0, 6));
+            // clear the old location so the lookup effect resolves the new pincode
+            update("dispatch_district", "");
+            update("dispatch_state", "");
+            setPincodeStatus(null);
+          }}
           inputMode="numeric"
           placeholder="6-digit pincode"
           className={fieldWrap()}
         />
-        <p className="text-[12.5px] font-medium tracking-wide text-slate-400">
-          Where you'll be dispatching orders from?
-        </p>
         {pincodeStatus === "checking" && <p className="text-[12px] font-semibold text-slate-400">Checking…</p>}
         {pincodeStatus === "ok" && <p className="text-[12px] font-bold text-[#047084]">Dispatching from {form.dispatch_district}, {form.dispatch_state}</p>}
         {pincodeStatus === "error" && <p className="text-[12px] font-medium text-[#c71f11]">Couldn't verify this pincode — you can still continue.</p>}
@@ -667,11 +738,119 @@ function TextField({ label, value = "", onChange, optional, placeholder, inputMo
   );
 }
 function TimeField({ label, value = "", onChange, optional }) {
+  const [open, setOpen] = useState(false);
+
+  const display = (() => {
+    if (!/^\d{2}:\d{2}/.test(value || "")) return "Select time";
+    const [h, m] = value.split(":").map(Number);
+    return `${String(h % 12 || 12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
+  })();
+
   return (
     <div className="flex flex-col gap-1">
       <Label optional={optional}>{label}</Label>
-      <input type="time" value={value || ""} onChange={(e) => onChange(e.target.value)} className={fieldWrap()} />
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={`${fieldWrap()} min-w-0 text-left ${value ? "" : "!font-normal text-slate-300"}`}
+      >
+        {display}
+      </button>
+      {open && (
+        <TimePickerModal
+          title={label}
+          value={value}
+          onClose={() => setOpen(false)}
+          onSave={(v) => { onChange(v); setOpen(false); }}
+        />
+      )}
     </div>
+  );
+}
+
+function TimePickerModal({ title, value, onClose, onSave }) {
+  const init = /^\d{2}:\d{2}/.test(value || "") ? value.split(":").map(Number) : [9, 0];
+  const [hour12, setHour12] = useState(init[0] % 12 || 12);
+  const [minute, setMinute] = useState(init[1]);
+  const [pm, setPm] = useState(init[0] >= 12);
+
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
+  const save = () => {
+    const h24 = (hour12 % 12) + (pm ? 12 : 0);
+    onSave(`${String(h24).padStart(2, "0")}:${String(minute).padStart(2, "0")}`);
+  };
+
+  const hours = Array.from({ length: 12 }, (_, i) => i + 1);
+  const minutes = Array.from({ length: 12 }, (_, i) => i * 5);
+  const chip = (active) =>
+    `flex h-10 items-center justify-center rounded-lg border-2 text-[14px] font-bold tracking-wide transition-colors ${active ? "border-[#047084] bg-[#047084] text-white" : "border-slate-200 bg-white text-slate-600"
+    }`;
+
+  // Portalled to <body> so the animated step container (transform) can't
+  // shift or clip it. Always dead-centre of the screen.
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[999] flex items-center justify-center bg-black/50 px-4"
+      style={{ height: "100dvh" }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl"
+        style={{ maxHeight: "90dvh", overflowY: "auto" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <p className="text-[15px] font-extrabold tracking-wide text-slate-900">{title}</p>
+          <button type="button" onClick={onClose} aria-label="Close" className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <p className="mt-3 text-center text-[32px] font-extrabold tabular-nums tracking-wide text-slate-900">
+          {String(hour12).padStart(2, "0")}:{String(minute).padStart(2, "0")}{" "}
+          <span className="text-[18px] text-[#047084]">{pm ? "PM" : "AM"}</span>
+        </p>
+
+        <p className="mb-1.5 mt-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">Hour</p>
+        <div className="grid grid-cols-6 gap-1.5">
+          {hours.map((h) => (
+            <button key={h} type="button" onClick={() => setHour12(h)} className={chip(h === hour12)}>{h}</button>
+          ))}
+        </div>
+
+        <p className="mb-1.5 mt-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">Minute</p>
+        <div className="grid grid-cols-6 gap-1.5">
+          {minutes.map((m) => (
+            <button key={m} type="button" onClick={() => setMinute(m)} className={chip(m === minute)}>
+              {String(m).padStart(2, "0")}
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-1.5">
+          <button type="button" onClick={() => setPm(false)} className={chip(!pm)}>AM</button>
+          <button type="button" onClick={() => setPm(true)} className={chip(pm)}>PM</button>
+        </div>
+
+        <div className="mt-5 flex gap-2.5">
+          <button type="button" onClick={onClose}
+            className="flex-1 rounded-xl border border-slate-200 py-2.5 text-[14px] font-bold tracking-wide text-slate-600">
+            Cancel
+          </button>
+          <button type="button" onClick={save}
+            className="flex-1 rounded-xl py-2.5 text-[14px] font-bold tracking-wide text-white"
+            style={{ background: "#000" }}>
+            Set time
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 function SelectField({ label, value, onChange, options, optional }) {
@@ -725,4 +904,4 @@ function FileField({ label, value, onUploaded, token, folder, accept, bucket = "
       </div>
     </div>
   );
-}   
+}

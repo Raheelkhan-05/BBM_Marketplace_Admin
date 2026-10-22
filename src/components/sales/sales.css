@@ -1,0 +1,383 @@
+/* ===== Root: same theme variables and background as Grow's .gsl, so GrowTabs' styling renders identically ===== */
+.gs {
+    --bg: #FFFFFF;
+    --s: #FFFFFF;
+    --s2: #EDF3F5;
+    --line: #DCE6E9;
+    --ink: #08222B;
+    --mute: #52686F;
+    --or: #F4511E;
+    --bl: #1E78D6;
+    --gr: #22A06B;
+    --go: #FFD60A;
+    --ot: #C23A0B;
+    --bt: #0F63B5;
+    --gt: #12794A;
+    --yt: #8A6500;
+    --tt: #0D6E7E;
+    --am: #9A6200;
+    --vi: #6D3FD1;
+    --ga: rgba(244, 81, 30, .10);
+    --gb: rgba(30, 120, 214, .12);
+    --red: #C0341D;
+    --f: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+    color-scheme: light;
+    position: relative;
+    min-height: 100vh;
+    min-height: 100dvh;
+    font: 500 16px/1.5 var(--f);
+    color: var(--ink);
+    background-color: var(--bg);
+    /* background-image: radial-gradient(520px 300px at 0 0, var(--ga), transparent 70%), radial-gradient(520px 300px at 100% 0, var(--gb), transparent 70%); */
+    background-repeat: no-repeat;
+    -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
+    padding-top: env(safe-area-inset-top, 0px);
+    overflow-x: clip;
+}
+
+/* Header: NOT sticky (same as Grow's .hd). It scrolls away and the tabs pin to the top of the screen. */
+.gs-hd {
+    position: relative;
+    z-index: 40;
+    height: 64px;
+    background: color-mix(in srgb, var(--s) 86%, transparent);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--line);
+}
+
+.gs-hd-in {
+    height: 100%;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+/* Brand: BBM logo + "BBM" (same font as the Grow header) over "SALES" (subtitle style). Never hidden. */
+.gs-brand {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.gs-brand img {
+    display: block;
+    height: 28px;
+    width: auto;
+    object-fit: contain;
+}
+
+.gs-co {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.gs-co b {
+    font-family: "Bricolage Grotesque", "Figtree", system-ui, sans-serif;
+    font-weight: 800;
+    font-size: 1.125rem;
+    line-height: 1;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    color: #08222B;
+}
+
+.gs-co small {
+    color: var(--k-mute);
+    font-weight: 700;
+    font-size: .72rem;
+    line-height: 1;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+/* Profile button + dropdown */
+.gs-menu {
+    position: relative;
+    flex: none;
+}
+
+.gs-prof {
+    display: block;
+    padding: 0;
+    border: 0;
+    background: none;
+    border-radius: 14px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform .15s;
+}
+
+.gs-prof:active {
+    transform: scale(.95);
+}
+
+.gs-prof:focus-visible {
+    outline: 2px solid var(--k-bl);
+    outline-offset: 2px;
+}
+
+/* Logo tile: fixed square, logo is contained (never cropped), so wide or square logos both fit */
+.gs-mark {
+    flex: none;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    background: #fff;
+    border: 1px solid var(--k-line);
+}
+
+.gs-mark.sm {
+    width: 36px;
+    height: 36px;
+    border-radius: 5px;
+    padding: 4px;
+}
+
+.gs-mark.lg {
+    width: 36px;
+    height: 36px;
+    border-radius: 5px;
+    padding: 5px;
+}
+
+.gs-mark img {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+}
+
+/* No logo: first letter of the company */
+.gs-mark.ini {
+    padding: 0;
+    border-color: transparent;
+    background: linear-gradient(135deg, #006F83 0%, #4FA3B0 100%);
+    color: #fff;
+    font: 900 1.05rem var(--k-f);
+}
+
+.gs-mark.lg.ini {
+    font-size: 1.25rem;
+}
+
+.gs-pop {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 10px);
+    z-index: 60;
+    width: min(280px, calc(100vw - 32px));
+    padding: 12px;
+    border-radius: 20px;
+    border: 1px solid var(--k-line);
+    background: var(--k-s);
+    box-shadow: 0 24px 48px -20px rgba(8, 34, 43, .5);
+    animation: gk-rise .22s var(--k-ease) both;
+}
+
+.gs-pop-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 2px 2px 12px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--k-line);
+}
+
+.gs-pop-who {
+    min-width: 0;
+    display: flex;
+    white-space: nowrap;
+    flex-direction: column;
+    line-height: 1.25;
+}
+
+.gs-pop-who b {
+    font: 900 1rem var(--k-f);
+    color: var(--k-ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gs-pop-who small {
+    margin-top: 2px;
+    color: var(--k-mute);
+    font-weight: 700;
+    font-size: .72rem;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gs-out {
+    width: 100%;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 14px;
+    border: 1px solid color-mix(in srgb, var(--k-red) 40%, var(--k-line));
+    background: transparent;
+    color: var(--k-red);
+    font: 800 .92rem var(--k-f);
+    cursor: pointer;
+    transition: background .2s, transform .15s;
+}
+
+.gs-out:hover {
+    background: color-mix(in srgb, var(--k-red) 8%, var(--k-s));
+}
+
+.gs-out:active {
+    transform: scale(.98);
+}
+
+.gs-main {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 16px 48px;
+}
+
+/* Tabs: everything comes from grow-modules.css so it matches GrowTabs.
+   Only the columns differ: 3 fixed-width tiles, centered. */
+.gk.gn.gs-nav .gn-tiles {
+    grid-template-columns: repeat(4, minmax(0, 96px)) !important;
+    justify-content: center;
+    gap: 8px 6px;
+}
+
+.gs-toast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    transform: translate(-50%, 20px);
+    z-index: 90;
+    padding: 12px 18px;
+    border-radius: 999px;
+    background: var(--k-ink);
+    color: var(--k-bg);
+    font: 800 .88rem var(--k-f);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .25s, transform .25s var(--k-ease);
+    max-width: calc(100vw - 32px);
+}
+
+.gs-toast.on {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+.gs-list {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 720px) {
+    .gs-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 1100px) {
+    .gs-list {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+.gs-card h3 {
+    font: 800 1.05rem/1.25 var(--k-f);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.gs-card .q {
+    display: block;
+    margin-top: 4px;
+    font-weight: 800;
+    font-size: .85rem;
+    color: var(--k-tt);
+}
+
+.gs-card small {
+    display: block;
+    color: var(--k-mute);
+    font-weight: 600;
+    font-size: .84rem;
+    margin-top: 2px;
+}
+
+.gs-lines {
+    display: grid;
+    gap: 6px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--k-line);
+}
+
+.gs-lines a,
+.gs-lines span {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--k-ink);
+    font-weight: 600;
+    font-size: .88rem;
+    text-decoration: none;
+    min-width: 0;
+}
+
+.gs-lines svg {
+    color: var(--k-mute);
+}
+
+.gs-form {
+    display: grid;
+    gap: 14px;
+}
+
+.gs-found {
+    padding: 12px 14px;
+    border-radius: 16px;
+    border: 1px solid color-mix(in srgb, var(--k-gr) 45%, var(--k-line));
+    background: color-mix(in srgb, var(--k-gr) 9%, var(--k-s));
+}
+
+.gs-found b {
+    display: block;
+    letter-spacing: 0.2px;
+}
+
+.gs-found small {
+    color: var(--k-mute);
+    letter-spacing: 0.4px;
+    font-weight: 600;
+}
+
+.gs-err {
+    color: var(--k-red);
+    font-weight: 700;
+    font-size: .88rem;
+}
+
+.gs-hint {
+    color: var(--k-mute);
+    font-size: .8rem;
+    font-weight: 600;
+}

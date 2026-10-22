@@ -41,7 +41,7 @@ const EASE = [0.22, 1, 0.36, 1];
 //   <ImageLightbox src="url" alt="..." onClose={...} />                (single image, old behavior)
 //   <ImageLightbox images={["url1","url2"]} alt="..." onClose={...} /> (gallery)
 export default function ImageLightbox({ src, images, alt, initialIndex = 0, onClose }) {
-    const { setLightboxOpen } = useLightboxVisibility();
+    const { setLightboxOpen } = useLightboxVisibility() || {};
     const overlayRef = useRef(null);
 
     const gallery = images && images.length > 0 ? images : src ? [src] : [];
@@ -102,7 +102,7 @@ export default function ImageLightbox({ src, images, alt, initialIndex = 0, onCl
     // on the page — all scoped to this component's lifetime, and always
     // undone on unmount so there's no way to get stuck zoomed or scrolled.
     useEffect(() => {
-        setLightboxOpen(true);
+        setLightboxOpen?.(true);
 
         const scrollY = window.scrollY;
         const prevBody = {
@@ -126,7 +126,7 @@ export default function ImageLightbox({ src, images, alt, initialIndex = 0, onCl
         }
 
         return () => {
-            setLightboxOpen(false);
+            setLightboxOpen?.(false);
             document.body.style.position = prevBody.position;
             document.body.style.top = prevBody.top;
             document.body.style.width = prevBody.width;

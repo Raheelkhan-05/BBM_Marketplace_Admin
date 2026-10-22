@@ -1285,6 +1285,49 @@ export async function adminListAdmins(token) {
   return res.json();
 }
 
+export async function setDefaultBuyerAddress(token, addressId) {
+  const res = await fetch(`${API_BASE}/buyer/addresses/${addressId}/default`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return res.json();
+}
+
+export async function fetchOfferForResume(submissionId, token) {
+  const qs = new URLSearchParams({ submissionId });
+  const res = await fetch(`${API_BASE}/orders/offer-for-resume?${qs.toString()}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: "include",
+  });
+  try { return await res.json(); } catch { return { success: false, message: "Couldn't reach the server." }; }
+}
+
+export async function fetchLowestPriceForBrandItem(genericProductBrandId, token) {
+  const res = await fetch(`${API_BASE}/catalog/seller-listing/lowest-price/${genericProductBrandId}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  return res.json();
+}
+
+export async function refreshSellerSubmission(token, id, validityHours) {
+  const res = await fetch(`${API_BASE}/seller/catalog/submissions/${id}/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(validityHours != null ? { validityHours } : {}),
+  });
+  return res.json();
+}
+
+export async function updateBuyerAddress(token, addressId, payload) {
+  const res = await fetch(`${API_BASE}/buyer/addresses/${addressId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
+
 export async function adminDemoteUser(token, adminId) {
   const res = await fetch(`${API_BASE}/admin/admins/demote`, {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },

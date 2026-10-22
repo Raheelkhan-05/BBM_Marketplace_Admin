@@ -131,7 +131,7 @@ function OrderCard({ order, idx, onAction }) {
                             </p>
                         </div>
                         <p className="text-[13px] italic font-medium tracking-wide" style={{ color: C.muted }}>
-                            Wallet deduction: ₹{inr(round2(order.subtotal_amount * order.platform_fee_percent / 100 * 1.18))} (0.25% commission + 18%GST)
+                            Wallet deduction: ₹{inr(round2(order.subtotal_amount * order.platform_fee_percent / 100 * 1.18))} ({order.platform_fee_percent}% Promotion & Visibility Budget + 18%GST)
                         </p>
                     </>
                 )}

@@ -1,4 +1,7 @@
 // utils/rfqUtils.js
+// Quantity: ONE final quantity in the individual unit (e.g. 500 Kg). The pack size is no longer asked anywhere.
+// toPayload always sends packSize 1 (quantity x pack size is what the backend multiplies, so it stays correct), and an
+// older enquiry saved as "packs x pack size" is turned into its total when it is opened for editing (fromDto).
 export const RFQ_UNITS = ["Pieces", "Kg", "Grams", "Litres", "Millilitres", "Dozen", "Tons"];
 
 export const PAYMENT_OPTIONS = [
@@ -17,7 +20,7 @@ export const EMPTY_RFQ_FORM = {
     images: [],
     quantity: "",
     unit: "",
-    packSize: "1",
+    packSize: "1", // always 1: the buyer enters the final quantity directly
     acceptEquivalent: false,
     specifications: "",
     paymentTerms: "",
@@ -33,12 +36,18 @@ export const EMPTY_RFQ_FORM = {
     recurringQuantity: "",
 };
 
+// quantity x pack size as one clean number (older enquiries were saved as packs x pack size).
+const totalOf = (quantity, packSize) => {
+    const q = Number(quantity), p = Number(packSize);
+    if (!(q > 0)) return q;
+    return Math.round(q * (p > 0 ? p : 1) * 1e6) / 1e6;
+};
+
 export function validateRfqForm(f) {
     const e = {};
     if ((f.productName || "").trim().length < 2) e.productName = "Enter the product name.";
-    if (!(Number(f.quantity) > 0)) e.quantity = "Enter the quantity you need.";
+    if (!(Number(f.quantity) > 0)) e.quantity = "Enter the total quantity you need.";
     if (!RFQ_UNITS.includes(f.unit)) e.unit = "Select a unit.";
-    if (!(Number(f.packSize) > 0)) e.packSize = "Enter the pack size.";
     if (!f.paymentTerms) e.paymentTerms = "Select the expected payment terms.";
     if (f.paymentTerms === "credit" && f.creditDays !== "" && f.creditDays != null) {
         const d = Number(f.creditDays);
@@ -107,9 +116,9 @@ export function toPayload(f) {
     return {
         productName: f.productName.trim(),
         images: f.images || [],
-        quantity: Number(f.quantity),
+        quantity: totalOf(f.quantity, f.packSize), // the final quantity, in the individual unit
         unit: f.unit,
-        packSize: Number(f.packSize),
+        packSize: 1,
         acceptEquivalent: !!f.acceptEquivalent,
         specifications: (f.specifications || "").trim(),
         paymentTerms: f.paymentTerms,
@@ -128,13 +137,14 @@ export function toPayload(f) {
 export function fromDto(d) {
     const loc = unflattenLocations(d.supplierLocations);
     const specific = Array.isArray(d.supplierLocations) && d.supplierLocations.some((e) => e.type === "country" && (e.includeOnly || (e.excludedStates || []).length));
+    const total = totalOf(d.quantity, d.packSize); // an older "packs x pack size" enquiry opens as its total
     return {
         ...EMPTY_RFQ_FORM,
         productName: d.productName || "",
         images: d.images || [],
-        quantity: String(d.quantity ?? ""),
+        quantity: d.quantity == null || d.quantity === "" ? "" : String(total),
         unit: d.unit || "",
-        packSize: String(d.packSize ?? "1"),
+        packSize: "1",
         acceptEquivalent: !!d.acceptEquivalent,
         specifications: d.specifications || "",
         paymentTerms: d.paymentTerms || "",
@@ -205,16 +215,17 @@ const csvEsc = (v) => {
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
+// quantity = the final total in the unit. (No pack_size column any more.)
 const TEMPLATE_HEADERS = [
-    "product_name", "quantity", "unit", "pack_size", "accept_equivalent", "specifications",
+    "product_name", "quantity", "unit", "accept_equivalent", "specifications",
     "payment_terms", "credit_days", "consumption", "recurring_frequency", "recurring_quantity",
     "delivery_pincode", "delivery_city", "delivery_state", "delivery_address", "image_url",
 ];
 
 export function buildTemplateCsv() {
     const samples = [
-        ["Stainless Steel Hinges 4 inch", "500", "Pieces", "10", "yes", "SS304, satin finish", "credit", "30", "regular", "monthly", "200", "", "", "", "", ""],
-        ["Industrial Lubricant Oil", "50", "Litres", "20", "no", "ISO VG 68", "advance", "", "one_time", "", "", "", "", "", "", ""],
+        ["Stainless Steel Hinges 4 inch", "5000", "Pieces", "yes", "SS304, satin finish", "credit", "30", "regular", "monthly", "200", "", "", "", "", ""],
+        ["Industrial Lubricant Oil", "1000", "Litres", "no", "ISO VG 68", "advance", "", "one_time", "", "", "", "", "", "", ""],
     ];
     return "\uFEFF" + [TEMPLATE_HEADERS, ...samples].map((r) => r.map(csvEsc).join(",")).join("\r\n");
 }
@@ -254,6 +265,7 @@ function normFreq(s) {
 }
 
 // rows = parseCsv output (first row = headers). defaults = { pincode, city, state }.
+// A file made from the OLD template (with a pack_size column) still works: quantity x pack_size becomes the total.
 export function csvToForms(rows, defaults = {}) {
     if (!rows.length) return { error: "The file is empty." };
     const [head, ...body] = rows;
@@ -264,12 +276,14 @@ export function csvToForms(rows, defaults = {}) {
         const g = (k) => { const j = keys.indexOf(k); return j < 0 ? "" : String(r[j] ?? "").trim(); };
         const regular = /^(regular|recurring)/i.test(g("consumption"));
         const url = g("image_url");
+        const q = Number(g("quantity")), p = Number(g("pack_size"));
+        const quantity = q > 0 && p > 0 && p !== 1 ? String(Math.round(q * p * 1e6) / 1e6) : g("quantity");
         const form = {
             ...EMPTY_RFQ_FORM,
             productName: g("product_name"),
-            quantity: g("quantity"),
+            quantity,
             unit: UNIT_ALIAS[g("unit").toLowerCase()] || g("unit"),
-            packSize: g("pack_size") || "1",
+            packSize: "1",
             acceptEquivalent: yes(g("accept_equivalent")),
             specifications: g("specifications"),
             paymentTerms: normPayment(g("payment_terms")),

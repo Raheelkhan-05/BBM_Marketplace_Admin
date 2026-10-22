@@ -1,20 +1,38 @@
+// pages/CartPage.jsx — SINGLE-PAGE FLOW
+//
+//   Top:      Delivery address (shared BuyerAddressContext, same one as Home / Buy Now)
+//   Middle:   one card per seller: items + quantity + price, then that seller's
+//             "Preferred transport" row and any constraint notices
+//   Footer:   total + ONE primary button:
+//             - some seller has no transport chosen -> "Select transport & pay"
+//               (opens each missing seller's transport modal in turn, then checks out)
+//             - all set                            -> "Proceed to pay"
+//
+// Pricing, stock, MOQ, order-window / serviceability constraints and the debounced
+// quantity writes are unchanged.
+//
+// PAYMENT: checkout creates the order group, then the buyer is sent to JioPay's hosted checkout
+// (utils/paymentsApi.js) for the whole cart in one payment. They return via /payment/return.
+// If starting the payment fails, tapping the button again resumes the same pending group.
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Trash2, Loader2, Store, ShoppingCart, MapPin, Plus, Clock } from "lucide-react";
+import { Trash2, Loader2, Store, ShoppingCart, MapPin, Minus, Plus, Clock, Truck, AlertCircle, ReceiptText, Package, FileText, X, ChevronDown } from "lucide-react";
 import { useAuth } from "../context/AuthContext.jsx";
 import { fetchCart, updateCartItem, removeFromCart, checkoutCart } from "../utils/cartApi.js";
-import { fetchBuyerAddresses, createBuyerAddress, fetchBusinessProfile, fetchOrderConstraints } from "../utils/api.js";
+import { startGroupPayment, redirectToGateway } from "../utils/paymentsApi.js";
+import { fetchOrderConstraints } from "../utils/api.js";
+import { fetchBuyerTransportPreference } from "../utils/api.transport.js";
+import { useOrderResume } from "../context/OrderResumeContext.jsx";
+import { useSocket } from "../context/SocketContext.jsx";
 import { C } from "../components/catalog/tokens";
-import GroupPaymentQRModal from "../components/GroupPaymentQRModal.jsx";
-import { TextField } from "../components/seller/listingForm/FormPrimitives.jsx";
+import AddressBook from "../components/shipping/AddressBook.jsx";
+import TransportPreferenceModal from "../components/transport/TransportPreferenceModal.jsx";
+import { BuyerAddressProvider, useBuyerAddress } from "../context/BuyerAddressContext.jsx";
 import { useCart } from "../context/CartContext.jsx";
-
-import { purchaseQtyToSaleUnitQty, saleUnitLabel, round2, hasOuterPack } from "../shared/packUnits.js";
+import { purchaseQtyToSaleUnitQty, saleUnitQtyToBaseUnits, saleUnitLabel, round2 } from "../shared/packUnits.js";
 import { checkOrderWindow, checkLocationServiceable } from "../shared/orderConstraints.js";
+import { routeTransportModeLabel } from "../../shared/routeTransportFields.js";
 
-// Mirrors resolveSlabUnitPrice/resolveDiscountPercent used everywhere else
-// (BuyNowModal, orders.controller) — kept local since there's no shared
-// pricing module yet, but the logic must stay identical to those.
 function resolveSlabUnitPrice(slabs, saleQty, fallbackPrice) {
     if (!Array.isArray(slabs) || !slabs.length) return fallbackPrice;
     const applicable = slabs
@@ -30,71 +48,200 @@ function resolveDiscountPercent(tiers, saleQty) {
     return applicable.length ? Number(applicable[0].discountPercent) || 0 : 0;
 }
 
-// item.price is ALREADY per sale unit (Pack, or Master Pack when this
-// listing hasOuterPack) — see shared/packUnits.js. Never re-multiply it
-// by pack_size again, that's the double-scaling bug this replaces.
-// purchase_basis can, in principle, differ from the seller's canonical
-// sale unit, so always convert through purchaseQtyToSaleUnitQty rather
-// than assuming they match.
+// item.price is ALREADY per sale unit (Pack, or Master Pack when this listing
+// hasOuterPack) — never re-multiply by pack_size.
 function priceFor(item) {
     const saleQty = purchaseQtyToSaleUnitQty(item.quantity, item.purchase_basis, item.pack_size, item.units_per_master_pack);
-
     const basePricePerSaleUnit = resolveSlabUnitPrice(item.price_slabs, saleQty, Number(item.price));
     const discountPercent = resolveDiscountPercent(item.quantity_discounts, saleQty);
     const unitPrice = round2(basePricePerSaleUnit * (1 - discountPercent / 100));
-
     const moqSaleUnits = Number(item.moq) || 0;
     const meetsMoq = moqSaleUnits ? saleQty >= moqSaleUnits : true;
+    return {
+        saleQty, lineTotal: round2(unitPrice * saleQty), discountPercent, meetsMoq, moqSaleUnits,
+        unitPrice, basePricePerSaleUnit,
+    };
+}
 
-    return { saleQty, lineTotal: round2(unitPrice * saleQty), discountPercent, meetsMoq, moqSaleUnits };
+function QuoteRow({ label, value, tone, small }) {
+    return (
+        <div className="flex items-center justify-between gap-3">
+            <span className={`font-medium tracking-wide ${small ? "text-[12.5px]" : "text-[13.5px]"}`} style={{ color: tone || C.muted }}>{label}</span>
+            <span className={`shrink-0 tabular-nums font-bold tracking-wide ${small ? "text-[12.5px]" : "text-[13.5px]"}`} style={{ color: tone || C.ink }}>{value}</span>
+        </div>
+    );
+}
+
+function saleUnitLabelFor(item) { return saleUnitLabel(item.units_per_master_pack); }
+function inr(n) { return (Number(n) || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 }); }
+
+function CartItemDetailModal({ item, onClose }) {
+    const p = priceFor(item);
+    const saleUnit = saleUnitLabelFor(item);
+    const hasTerms = item.delivery_timeline || item.payment_terms || item.return_policy || item.warranty || item.freight_included != null || item.dispatch_origin;
+
+    return (
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 sm:items-center sm:p-4" onClick={onClose}>
+            <div className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-t-[24px] bg-white shadow-2xl sm:rounded-[20px]" onClick={(e) => e.stopPropagation()}>
+                <div className="flex shrink-0 items-center justify-between gap-3 border-b px-5 py-4" style={{ borderColor: C.hairSoft }}>
+                    <div className="min-w-0">
+                        <p className="text-[11px] font-bold tracking-wider" style={{ color: C.secondary }}>Item details</p>
+                        <h2 className="mt-0.5 truncate text-[16px] font-bold tracking-wide" style={{ color: C.ink }}>{item.product_name}</h2>
+                    </div>
+                    <button onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors duration-150 hover:bg-black/[0.05]">
+                        <X className="h-4.5 w-4.5" style={{ color: C.muted }} />
+                    </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto px-5 py-4">
+                    <div className="flex flex-col gap-3">
+                        <details open className="group rounded-2xl border bg-white p-4" style={{ borderColor: C.hairSoft }}>
+                            <summary className="flex cursor-pointer list-none items-center justify-between gap-2">
+                                <span className="flex items-center gap-2">
+                                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" style={{ background: `${C.secondary}12` }}>
+                                        <ReceiptText className="h-3.5 w-3.5" style={{ color: C.secondary }} />
+                                    </span>
+                                    <span className="text-[14px] font-bold" style={{ color: C.ink }}>Price breakdown</span>
+                                </span>
+                                <ChevronDown className="h-4 w-4 shrink-0 transition-transform duration-200 group-open:rotate-180" style={{ color: C.muted }} />
+                            </summary>
+
+                            <div className="mt-3 flex flex-col gap-3 border-t pt-3" style={{ borderColor: C.hairSoft }}>
+                                <div className="flex items-center gap-3 rounded-xl border px-3.5 py-3" style={{ borderColor: C.hair }}>
+                                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={{ background: `${C.secondary}12` }}>
+                                        <Package className="h-4 w-4" style={{ color: C.secondary }} />
+                                    </span>
+                                    <p className="text-[14px] font-extrabold tabular-nums tracking-wide" style={{ color: C.ink }}>
+                                        {p.saleQty} {saleUnit}{p.saleQty === 1 ? "" : "s"}
+                                        {Number(item.pack_size) > 0 && (
+                                            <span className="font-semibold" style={{ color: C.muted }}>
+                                                {" "}· {saleUnitQtyToBaseUnits(p.saleQty, item.pack_size, item.units_per_master_pack)} {item.unit}
+                                            </span>
+                                        )}
+                                    </p>
+                                </div>
+
+                                <div className="flex flex-col gap-2.5 rounded-xl bg-slate-50 p-3.5">
+                                    <span className="text-[11.5px] font-bold tracking-wider" style={{ color: C.muted }}>Rate applied</span>
+                                    <div className="flex items-baseline justify-between gap-2 tracking-wide">
+                                        <span className="text-[14px] font-bold" style={{ color: C.ink }}>
+                                            ₹{inr(p.basePricePerSaleUnit)} <span className="font-medium" style={{ color: C.muted }}>/ {saleUnit}</span>
+                                        </span>
+                                        {Number(item.pack_size) > 0 && (
+                                            <span className="shrink-0 text-[11px] font-medium tabular-nums" style={{ color: C.muted }}>
+                                                ≈ ₹{inr(p.basePricePerSaleUnit / saleUnitQtyToBaseUnits(1, item.pack_size, item.units_per_master_pack))} / {item.unit}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="h-px" style={{ background: C.hair }} />
+                                    <QuoteRow label="Subtotal" value={`₹${inr(p.basePricePerSaleUnit * p.saleQty)}`} tone={C.ink} small />
+                                    {p.discountPercent > 0 && (
+                                        <QuoteRow label={`Discount (${p.discountPercent}% off)`} value={`− ₹${inr(p.basePricePerSaleUnit * p.saleQty - p.lineTotal)}`} tone={C.secondary} small />
+                                    )}
+                                    <div className="h-px" style={{ background: C.hair }} />
+                                    <div className="flex items-center justify-between tracking-wide">
+                                        <span className="text-[13.5px] font-bold" style={{ color: C.ink }}>Total payable</span>
+                                        <span className="text-[20px] font-extrabold tabular-nums" style={{ color: C.ink }}>₹{inr(p.lineTotal)}</span>
+                                    </div>
+                                </div>
+
+                                {Array.isArray(item.price_slabs) && item.price_slabs.length > 0 && (
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {item.price_slabs.map((slab, i) => (
+                                            <span key={i} className="rounded-full border px-2.5 py-1 text-[11.5px] font-bold" style={{ borderColor: C.hair, color: C.muted }}>
+                                                {slab.minQty}{slab.maxQty ? `–${slab.maxQty}` : "+"} {saleUnit}{Number(slab.maxQty || slab.minQty) === 1 ? "" : "s"}: ₹{inr(slab.price)}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                                {Array.isArray(item.quantity_discounts) && item.quantity_discounts.length > 0 && (
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {item.quantity_discounts.map((tier, i) => (
+                                            <span key={i} className="rounded-full border px-2.5 py-1 text-[11.5px] font-bold" style={{ borderColor: C.hair, color: C.muted }}>
+                                                {tier.minQty}+ {saleUnit}{Number(tier.minQty) === 1 ? "" : "s"}: {tier.discountPercent}% off
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </details>
+
+                        {hasTerms && (
+                            <details className="group rounded-2xl border bg-white p-4" style={{ borderColor: C.hairSoft }}>
+                                <summary className="flex cursor-pointer list-none items-center justify-between gap-2">
+                                    <span className="flex items-center gap-2">
+                                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" style={{ background: `${C.secondary}12` }}>
+                                            <FileText className="h-3.5 w-3.5" style={{ color: C.secondary }} />
+                                        </span>
+                                        <span className="text-[14px] font-bold" style={{ color: C.ink }}>Seller terms</span>
+                                    </span>
+                                    <ChevronDown className="h-4 w-4 shrink-0 transition-transform duration-200 group-open:rotate-180" style={{ color: C.muted }} />
+                                </summary>
+                                <div className="mt-3 flex flex-col gap-2 border-t pt-3 text-[13px] font-medium" style={{ borderColor: C.hairSoft }}>
+                                    {item.delivery_timeline && <div className="flex justify-between gap-3"><span style={{ color: C.muted }}>Delivery</span><span style={{ color: C.ink, fontWeight: 700 }} className="text-right">{item.delivery_timeline}</span></div>}
+                                    {item.payment_terms && <div className="flex justify-between gap-3"><span style={{ color: C.muted }}>Payment</span><span style={{ color: C.ink, fontWeight: 700 }} className="text-right">{item.payment_terms}</span></div>}
+                                    {item.return_policy && <div className="flex justify-between gap-3"><span style={{ color: C.muted }}>Returns</span><span style={{ color: C.ink, fontWeight: 700 }} className="text-right">{item.return_policy}</span></div>}
+                                    {item.warranty && <div className="flex justify-between gap-3"><span style={{ color: C.muted }}>Warranty</span><span style={{ color: C.ink, fontWeight: 700 }} className="text-right">{item.warranty}</span></div>}
+                                    {item.dispatch_origin && <div className="flex justify-between gap-3"><span style={{ color: C.muted }}>Ships from</span><span style={{ color: C.ink, fontWeight: 700 }} className="text-right">{item.dispatch_origin}</span></div>}
+                                    {item.freight_included != null && (
+                                        <div className="flex justify-between gap-3">
+                                            <span style={{ color: C.muted }}>Freight</span>
+                                            <span style={{ color: item.freight_included ? C.secondary : C.ink, fontWeight: 700 }} className="text-right">
+                                                {item.freight_included ? "Included in price" : "Extra, paid by buyer"}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                            </details>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
 }
 
 function stockInfoFor(item) {
     const capped = item.stock_type === "ready_stock" && item.available_stock != null;
     const max = capped ? Number(item.available_stock) : null;
+    const moq = Number(item.moq) || 0;
     return {
-        capped,
-        max,
-        outOfStock: capped && max <= 0,
+        capped, max,
+        outOfStock: capped && (moq > 0 ? max < moq : max <= 0),
         exceeds: capped && Number(item.quantity) > max,
     };
 }
 
-function inr(n) { return (Number(n) || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 }); }
-
-const EMPTY_ADDRESS = { label: "Office", contact_name: "", contact_phone: "", address_line1: "", address_line2: "", city: "", state: "", pincode: "" };
-
-// Seeds a new-address form from the buyer's GST-derived business_profiles
-// row and their basic profiles row (name/phone). profiles data wins for
-// contact_name/contact_phone since GST data has no phone number and the
-// registered legal_name is often the company, not a person.
-function seedFromBusinessProfile(bp, contact) {
-    if (!bp && !contact) return null;
-    const useDispatch = bp?.dispatch_same_as_registered === false && bp.dispatch_address;
+function sellerObjFor(group) {
+    const first = group.items[0];
+    const city = first.seller_dispatch_city || "";
+    const state = first.seller_dispatch_state || "";
     return {
-        label: "Registered Office",
-        contact_name: contact?.name || bp?.legal_name || bp?.trade_name || "",
-        contact_phone: contact?.phone || "",
-        address_line1: (useDispatch ? bp?.dispatch_address : bp?.registered_address) || "",
-        address_line2: "",
-        city: bp?.district || "",
-        state: (useDispatch ? (bp?.dispatch_state || bp?.state) : bp?.state) || "",
-        pincode: (useDispatch ? (bp?.dispatch_pincode || bp?.pincode) : bp?.pincode) || "",
+        sellerId: group.seller.seller_id,
+        display_name: group.seller.seller_name,
+        dispatchOrigin: city && state ? `${city}, ${state}` : city || state || "",
+        dispatchState: state,
+        transportOptions: first.seller_transport_options || [],
     };
 }
 
-// One cohesive notice block for "can't order right now" — mirrors
-// BuyNowModal's ConstraintNotice so the two flows read consistently.
-// Reasons is a flat list of { icon, message }; falsy entries are dropped
-// so a single active reason still renders cleanly.
+function Notice({ tone = "warn", children }) {
+    const tones = { warn: { background: "#FEF6E7", color: "#92600A" }, danger: { background: "#FDECEC", color: "#B3261E" } };
+    const t = tones[tone] || tones.warn;
+    return (
+        <div className="mt-2.5 flex items-start gap-2 rounded-lg px-3 py-2.5" style={{ background: t.background }}>
+            <AlertCircle className="mt-[1px] h-3.5 w-3.5 shrink-0" style={{ color: t.color }} />
+            <p className="text-[11.5px] font-semibold leading-snug tracking-wider" style={{ color: t.color }}>{children}</p>
+        </div>
+    );
+}
+
 function ConstraintNotice({ reasons }) {
     const active = reasons.filter(Boolean);
     if (!active.length) return null;
     return (
         <div className="mt-2.5 rounded-lg px-3 py-2.5" style={{ background: "rgba(199,31,17,0.08)" }}>
-            <p className="text-[11px] font-extrabold uppercase tracking-[0.06em]" style={{ color: "#c71f11" }}>
-                Can't include this seller's items right now
-            </p>
+            <p className="text-[11px] font-extrabold uppercase tracking-[0.06em]" style={{ color: "#c71f11" }}>Can't include this seller's items right now</p>
             <div className="mt-1.5 flex flex-col gap-1">
                 {active.map((r, i) => (
                     <div key={i} className="flex items-start gap-1.5">
@@ -107,81 +254,74 @@ function ConstraintNotice({ reasons }) {
     );
 }
 
-export default function CartPage() {
+function QtyStepper({ value, onChange, min, disabled }) {
+    const atMin = Number(value) <= Number(min);
+    return (
+        <div className="flex items-center overflow-hidden rounded-lg border" style={{ borderColor: C.hair }}>
+            <button type="button" disabled={disabled || atMin}
+                onClick={(e) => { e.stopPropagation(); onChange(Number(value) - 1); }}
+                className="flex h-7 w-7 items-center justify-center transition-colors duration-150 hover:bg-black/[0.03] disabled:opacity-30">
+                <Minus className="h-3 w-3" style={{ color: C.ink }} />
+            </button>
+            <span className="w-8 text-center text-[12.5px] font-bold tabular-nums">{value}</span>
+            <button type="button" disabled={disabled}
+                onClick={(e) => { e.stopPropagation(); onChange(Number(value) + 1); }}
+                className="flex h-7 w-7 items-center justify-center transition-colors duration-150 hover:bg-black/[0.03] disabled:opacity-30">
+                <Plus className="h-3 w-3" style={{ color: C.ink }} />
+            </button>
+        </div>
+    );
+}
+
+function CartPageInner() {
     const navigate = useNavigate();
+    const { socket } = useSocket();
     const { token } = useAuth();
+    const { registerActive, unregisterActive, reportApproved, reportRejected } = useOrderResume();
+    const { selectedAddress } = useBuyerAddress();
+    const addressBookRef = useRef(null);
+    const selectedAddressId = selectedAddress?.id || null;
+
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [addresses, setAddresses] = useState([]);
-    const [addressId, setAddressId] = useState(null);
-    const [showNewAddress, setShowNewAddress] = useState(false);
-    const [newAddress, setNewAddress] = useState(EMPTY_ADDRESS);
+    const [viewingItem, setViewingItem] = useState(null);
     const [checking, setChecking] = useState(false);
     const [error, setError] = useState(null);
-    const [payingGroupId, setPayingGroupId] = useState(null);
     const pendingWrites = useRef({});
-    const { reload: reloadCartBadge, setCountOptimistic } = useCart();
-
     const pendingWritePromises = useRef({});
+    const { setCountOptimistic } = useCart();
+
+    // Coming back with the browser's Back button from the payment page can restore this page from the
+    // back/forward cache with the button stuck on its spinner. Unfreeze it.
+    useEffect(() => {
+        const onShow = (e) => { if (e.persisted) setChecking(false); };
+        window.addEventListener("pageshow", onShow);
+        return () => window.removeEventListener("pageshow", onShow);
+    }, []);
 
     const load = useCallback(async () => {
         const res = await fetchCart(token);
         if (res?.success) {
             setItems(res.items);
-            setCountOptimistic(res.items.length); // keep badge in sync on full loads too
+            setCountOptimistic(res.items.length);
         }
         setLoading(false);
     }, [token, setCountOptimistic]);
 
     useEffect(() => { load(); }, [load]);
-    useEffect(() => {
-        fetchBuyerAddresses(token).then(async (res) => {
-            if (res?.success) {
-                setAddresses(res.addresses || []);
-                const def = res.addresses?.find((a) => a.is_default) || res.addresses?.[0];
-                if (def) {
-                    setAddressId(def.id);
-                } else {
-                    // No saved addresses yet — go straight to the form, same as
-                    // BuyNowModal, but prefill it from the buyer's GST profile
-                    // (if they have one on file) instead of leaving it blank.
-                    const bpRes = await fetchBusinessProfile(token);
-                    const seeded = bpRes?.success ? seedFromBusinessProfile(bpRes.profile, bpRes.contact) : null;
-                    setNewAddress(seeded || EMPTY_ADDRESS);
-                    setShowNewAddress(true);
-                }
-            }
-        });
-    }, [token]);
 
-    const grouped = items.reduce((acc, it) => {
-        (acc[it.seller_id] ||= { seller: it, items: [] }).items.push(it);
-        return acc;
-    }, {});
+    const grouped = useMemo(() => (
+        items.reduce((acc, it) => {
+            (acc[it.seller_id] ||= { seller: it, items: [] }).items.push(it);
+            return acc;
+        }, {})
+    ), [items]);
+    const sellerIds = Object.keys(grouped);
 
     const grandTotal = items.reduce((sum, it) => sum + priceFor(it).lineTotal, 0);
 
-    // ---------------------------------------------------------------
-    // Order-window + delivery-serviceability constraints, per seller/item.
-    //
-    // Why this exists: a buyer can add items to the cart while a seller's
-    // shop is open and deliverable to their address, then come back to
-    // check out later — outside the seller's working hours, on a holiday,
-    // or after switching to an address that seller doesn't ship to. The
-    // backend (checkoutCart) already hard-blocks all of this at the RPC
-    // boundary, so nothing incorrect can ever actually be ordered — but
-    // without this, the buyer would fill in the whole form and only find
-    // out from a generic error message after hitting "Proceed to pay".
-    // This mirrors that exact same check on the frontend, per seller
-    // (window) and per item (location, since dispatching_locations is set
-    // per listing, not per seller), so the buyer sees it before they even
-    // reach checkout — same UX contract BuyNowModal already gives for a
-    // single-seller purchase.
-    // ---------------------------------------------------------------
-    const submissionIds = useMemo(
-        () => [...new Set(items.map((i) => i.submission_id).filter(Boolean))],
-        [items]
-    );
+    // ---- Order-window + delivery-serviceability constraints (backend re-checks at checkout) ----
+    const submissionIds = useMemo(() => [...new Set(items.map((i) => i.submission_id).filter(Boolean))], [items]);
     const submissionIdsKey = submissionIds.join(",");
 
     const [constraintsBySubmission, setConstraintsBySubmission] = useState({});
@@ -192,38 +332,19 @@ export default function CartPage() {
             const results = await Promise.all(submissionIds.map((id) => fetchOrderConstraints(id)));
             if (cancelled) return;
             const map = {};
-            submissionIds.forEach((id, idx) => {
-                if (results[idx]?.success) map[id] = results[idx];
-            });
+            submissionIds.forEach((id, idx) => { if (results[idx]?.success) map[id] = results[idx]; });
             setConstraintsBySubmission(map);
         })();
         return () => { cancelled = true; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [submissionIdsKey]);
 
-    // Re-evaluate the working-hours window every 30s, same as BuyNowModal,
-    // so a cart left open across a seller's cutoff time disables itself
-    // without a reload.
     const [clockTick, setClockTick] = useState(0);
     useEffect(() => {
         const id = setInterval(() => setClockTick((t) => t + 1), 30000);
         return () => clearInterval(id);
     }, []);
 
-    // Effective address used for the location check — prefers the
-    // in-progress new-address form (so it updates live as the buyer
-    // types) exactly like BuyNowModal does, falls back to the selected
-    // saved address otherwise.
-    const effectiveAddress = showNewAddress
-        ? { state: newAddress.state, city: newAddress.city }
-        : (addresses.find((a) => a.id === addressId) || null);
-
-    // Per-seller-group constraint status: working-hours window (shared
-    // across all of a seller's items) + per-item location serviceability
-    // (each listing can have its own dispatching_locations).
-    // groupConstraintStatus: `blocked` now only reflects location, but we
-    // still carry windowStatus through so the UI can show the non-blocking
-    // "seller currently closed" notice per seller group.
     const groupConstraintStatus = useMemo(() => {
         const result = {};
         for (const [sellerId, group] of Object.entries(grouped)) {
@@ -235,44 +356,157 @@ export default function CartPage() {
                 orderAcceptanceEnd: constraints.orderAcceptanceEnd,
                 holidays: constraints.holidays,
             } : null);
-
-            const itemLocationStatuses = group.items.map((it) => {
-                const c = constraintsBySubmission[it.submission_id];
-                return { item: it, status: checkLocationServiceable(c?.dispatchingLocations, effectiveAddress) };
-            });
-            const blockedItems = itemLocationStatuses.filter((x) => !x.status.serviceable);
-
-            result[sellerId] = {
-                windowStatus,
-                blockedItems,
-                // location is the only thing that actually blocks checkout now
-                blocked: blockedItems.length > 0,
-            };
+            const blockedItems = group.items
+                .map((it) => ({ item: it, status: checkLocationServiceable(constraintsBySubmission[it.submission_id]?.dispatchingLocations, selectedAddress) }))
+                .filter((x) => !x.status.serviceable);
+            result[sellerId] = { windowStatus, blockedItems, blocked: blockedItems.length > 0 };
         }
         return result;
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [grouped, constraintsBySubmission, effectiveAddress?.state, effectiveAddress?.city, clockTick]);
+    }, [grouped, constraintsBySubmission, selectedAddress?.state, selectedAddress?.city, clockTick]);
 
-    const anyGroupBlocked = Object.values(groupConstraintStatus).some((g) => g.blocked);
+    const anyGroupBlocked = !!selectedAddress && Object.values(groupConstraintStatus).some((g) => g.blocked);
+
+    // ---- Per-seller transport preference (keyed by sellerId) ----
+    const [transportPreferences, setTransportPreferences] = useState({});
+    const [pendingTransportProposals, setPendingTransportProposals] = useState({});
+    const [transportRemovedNotices, setTransportRemovedNotices] = useState({});
+    const [activeTransportSellerId, setActiveTransportSellerId] = useState(null);
+    const lastCheckedRouteBySellerRef = useRef({});
+    // true while "Select transport & pay" is walking the buyer through missing sellers
+    const checkoutAfterTransportRef = useRef(false);
+
+    // Instant reflect of approval/rejection notifications for proposals this page tracks.
+    useEffect(() => {
+        if (!socket) return;
+        const onNotif = async (payload) => {
+            const routeOptionId = payload?.routeOptionId;
+            if (!routeOptionId) return;
+            const sellerId = Object.entries(pendingTransportProposals).find(([, p]) => p?.routeOptionId === routeOptionId)?.[0];
+            if (!sellerId) return;
+            const proposal = pendingTransportProposals[sellerId];
+
+            if (payload.type === "transport_proposal_approved") {
+                const res = await fetchBuyerTransportPreference(sellerId, selectedAddress?.state, selectedAddress?.city, token, routeOptionId);
+                if (res?.checkedProposalStatus === "approved" && res?.preference) {
+                    setTransportPreferences((prev) => ({ ...prev, [sellerId]: res.preference }));
+                    setPendingTransportProposals((prev) => ({ ...prev, [sellerId]: null }));
+                    reportApproved(routeOptionId, res.preference);
+                }
+            } else if (payload.type === "transport_proposal_rejected") {
+                setPendingTransportProposals((prev) => ({ ...prev, [sellerId]: null }));
+                setTransportPreferences((prev) => ({ ...prev, [sellerId]: null }));
+                setTransportRemovedNotices((prev) => ({
+                    ...prev,
+                    [sellerId]: `Your proposed transport option (${proposal.summary}) wasn't accepted by this seller.` + (payload.reason ? ` Reason: ${payload.reason}` : ""),
+                }));
+                reportRejected(routeOptionId, payload.reason || null);
+            }
+        };
+        socket.on("notification:new", onNotif);
+        return () => socket.off("notification:new", onNotif);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [socket, pendingTransportProposals, selectedAddress?.state, selectedAddress?.city, token]);
 
     useEffect(() => {
-        // Clean up any in-flight debounce timers on unmount so they don't
-        // fire updateCartItem calls against an unmounted page.
-        return () => { Object.values(pendingWrites.current).forEach(clearTimeout); };
-    }, []);
+        const keys = Object.values(pendingTransportProposals).filter((p) => p?.routeOptionId).map((p) => p.routeOptionId);
+        keys.forEach(registerActive);
+        return () => keys.forEach(unregisterActive);
+    }, [pendingTransportProposals, registerActive, unregisterActive]);
+
+    // Look up each seller's preference as soon as the address (from context) is known.
+    useEffect(() => {
+        const city = selectedAddress?.city;
+        const state = selectedAddress?.state;
+        if (!city || !state || !sellerIds.length) return;
+        const routeKey = `${state.trim().toLowerCase()}::${city.trim().toLowerCase()}`;
+
+        sellerIds.forEach(async (sellerId) => {
+            if (lastCheckedRouteBySellerRef.current[sellerId] === routeKey) return;
+            lastCheckedRouteBySellerRef.current[sellerId] = routeKey;
+
+            const res = await fetchBuyerTransportPreference(sellerId, state, city, token);
+            const pendingProposal = res?.pendingProposal ? { ...res.pendingProposal, destCity: city, destState: state } : null;
+            setPendingTransportProposals((prev) => ({ ...prev, [sellerId]: pendingProposal }));
+
+            if (res?.rejectedNotice) {
+                setTransportPreferences((prev) => ({ ...prev, [sellerId]: null }));
+                setTransportRemovedNotices((prev) => ({
+                    ...prev,
+                    [sellerId]: `Your proposed transport option (${res.rejectedNotice.summary}) wasn't accepted by this seller.` +
+                        (res.rejectedNotice.reason ? ` Reason: ${res.rejectedNotice.reason}` : ""),
+                }));
+                if (res.rejectedNotice.routeOptionId) reportRejected(res.rejectedNotice.routeOptionId, res.rejectedNotice.reason || null);
+                return;
+            }
+
+            if (res?.success && res.decided) {
+                setTransportPreferences((prev) => ({ ...prev, [sellerId]: res.preference ? { ...res.preference, destCity: city, destState: state } : null }));
+                setTransportRemovedNotices((prev) => ({ ...prev, [sellerId]: null }));
+            } else {
+                setTransportPreferences((prev) => ({ ...prev, [sellerId]: null }));
+                setTransportRemovedNotices((prev) => ({
+                    ...prev,
+                    [sellerId]: res?.invalidated ? "The seller no longer offers your previously selected transport option." : null,
+                }));
+            }
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedAddress?.city, selectedAddress?.state, token, sellerIds.join(",")]);
+
+    // Address changed -> routes changed -> forget per-seller checks so they re-run.
+    const prevRouteRef = useRef(null);
+    useEffect(() => {
+        const key = selectedAddress ? `${selectedAddress.state}::${selectedAddress.city}` : null;
+        if (prevRouteRef.current && key && prevRouteRef.current !== key) {
+            setTransportPreferences({});
+            setPendingTransportProposals({});
+        }
+        prevRouteRef.current = key;
+    }, [selectedAddress?.city, selectedAddress?.state]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Poll pending proposals for approval / rejection.
+    useEffect(() => {
+        const city = selectedAddress?.city;
+        const state = selectedAddress?.state;
+        if (!city || !state) return;
+
+        Object.entries(pendingTransportProposals).forEach(async ([sellerId, proposal]) => {
+            if (!proposal?.routeOptionId) return;
+            const res = await fetchBuyerTransportPreference(sellerId, state, city, token, proposal.routeOptionId);
+            if (!res?.success) return;
+
+            if (res.checkedProposalStatus === "approved") {
+                const resolved = {
+                    routeOptionId: proposal.routeOptionId, mode: proposal.mode, fields: proposal.fields,
+                    summary: proposal.summary, destCity: city, destState: state,
+                };
+                setTransportPreferences((prev) => ({ ...prev, [sellerId]: resolved }));
+                setPendingTransportProposals((prev) => ({ ...prev, [sellerId]: null }));
+                reportApproved(proposal.routeOptionId, resolved);
+            } else if (res.checkedProposalStatus === "rejected") {
+                setPendingTransportProposals((prev) => ({ ...prev, [sellerId]: null }));
+                setTransportPreferences((prev) => ({ ...prev, [sellerId]: null }));
+                setTransportRemovedNotices((prev) => ({
+                    ...prev,
+                    [sellerId]: `Your proposed transport option (${proposal.summary}) wasn't accepted by this seller.` +
+                        (res.rejectedReason ? ` Reason: ${res.rejectedReason}` : ""),
+                }));
+                reportRejected(proposal.routeOptionId, res.rejectedReason || null);
+            }
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [clockTick, selectedAddress?.city, selectedAddress?.state, token]);
+
+    useEffect(() => () => { Object.values(pendingWrites.current).forEach(clearTimeout); }, []);
 
     const handleQty = (submissionId, quantity, moq) => {
         const floor = Number(moq) > 0 ? Number(moq) : 1;
         if (quantity < floor) return;
 
-        setItems((prev) => {
-            const next = prev.map((it) => (it.submission_id === submissionId ? { ...it, quantity } : it));
-            return next;
-        });
-
+        setItems((prev) => prev.map((it) => (it.submission_id === submissionId ? { ...it, quantity } : it)));
         clearTimeout(pendingWrites.current[submissionId]);
 
-        // Wrap the debounced write in a promise we can await elsewhere (checkout).
         pendingWritePromises.current[submissionId] = new Promise((resolve) => {
             pendingWrites.current[submissionId] = setTimeout(async () => {
                 const res = quantity <= 0
@@ -291,21 +525,14 @@ export default function CartPage() {
     const flushPendingWrites = async () => {
         const ids = Object.keys(pendingWrites.current);
         ids.forEach((id) => clearTimeout(pendingWrites.current[id]));
-
-        // Re-run each write immediately (bypassing the timer) for anything
-        // still pending, then wait for all of them.
-        const flushes = ids.map(async (submissionId) => {
+        await Promise.all(ids.map(async (submissionId) => {
             const it = items.find((i) => i.submission_id === submissionId);
             if (!it) return;
             const res = it.quantity <= 0
                 ? await removeFromCart(token, submissionId)
                 : await updateCartItem(token, submissionId, { quantity: it.quantity });
-            if (res && res.success === false) {
-                setError(res.message || "Couldn't update quantity.");
-            }
-        });
-
-        await Promise.all(flushes);
+            if (res && res.success === false) setError(res.message || "Couldn't update quantity.");
+        }));
         pendingWrites.current = {};
         pendingWritePromises.current = {};
     };
@@ -319,82 +546,112 @@ export default function CartPage() {
         removeFromCart(token, submissionId).then((res) => {
             if (res && res.success === false) {
                 setError(res.message || "Couldn't remove item.");
-                load(); // reconciles both items and the badge count
+                load();
             }
         });
     };
 
-    const setAddrField = (key, value) => setNewAddress((a) => ({ ...a, [key]: value }));
+    const hasStockBlock = items.some((it) => { const s = stockInfoFor(it); return s.outOfStock || s.exceeds; });
 
-    const handleSaveNewAddress = async () => {
-        const missing = ["contact_name", "contact_phone", "address_line1", "city", "state", "pincode"].filter((k) => !newAddress[k].trim());
-        if (missing.length) { setError("Please fill in the shipping address completely."); return null; }
+    // prefsOverride lets the "Select transport & pay" flow check out right after the
+    // last seller is chosen, before React has committed that state.
+    const handleCheckout = async (prefsOverride) => {
         setError(null);
-        const res = await createBuyerAddress(token, { ...newAddress, is_default: addresses.length === 0 });
-        if (!res?.success) { setError(res?.message || "Couldn't save address."); return null; }
-        setAddresses((prev) => [res.address, ...prev]);
-        setAddressId(res.address.id);
-        setShowNewAddress(false);
-        setNewAddress(EMPTY_ADDRESS);
-        return res.address.id;
-    };
+        const prefs = prefsOverride || transportPreferences;
 
-    const hasStockBlock = items.some((it) => {
-        const s = stockInfoFor(it);
-        return s.outOfStock || s.exceeds;
-    });
-
-    const handleCheckout = async () => {
         if (hasStockBlock) {
             setError("One or more items in your cart exceed what's available from the seller. Please adjust the quantities.");
             return;
         }
-
-        // Hard guard — never trust the disabled prop alone. Re-check against
-        // whatever constraint state we have right now, same pattern as
-        // BuyNowModal's handleSubmit, before doing anything else. The
-        // backend re-checks this again inside checkoutCart regardless, but
-        // catching it here avoids an unnecessary round trip and gives a
-        // clearer, per-seller message.
+        if (!selectedAddressId) { setError("Please add a delivery address first."); return; }
         if (anyGroupBlocked) {
             const blockedGroup = Object.values(groupConstraintStatus).find((g) => g.blocked);
             setError(blockedGroup.blockedItems[0]?.status.message || "One or more sellers in your cart don't deliver to your selected address.");
             return;
         }
-
-        // NOTE: there used to be an `if (!addressId) return setError(...)` guard
-        // right here. That's what caused "Please select a shipping address" to
-        // fire even when the buyer HAD just filled in a new address — with no
-        // saved addresses, addressId is null by definition (there's nothing to
-        // select), so the guard tripped before we ever reached the
-        // showNewAddress branch below that actually saves the typed-in address
-        // and gets it an id. handleSaveNewAddress() already validates the
-        // fields and sets its own error, so this separate guard was redundant
-        // as well as wrong — removed.
-        setChecking(true);
-
-        // Make sure every optimistic quantity change actually landed in the DB
-        // before place_cart_order reads cart_items — otherwise it can price
-        // off a stale quantity that doesn't match what's shown on screen.
-        await flushPendingWrites();
-
-        let effectiveAddressId = addressId;
-        if (showNewAddress || !effectiveAddressId) {
-            effectiveAddressId = await handleSaveNewAddress();
-            if (!effectiveAddressId) { setChecking(false); return; }
+        const missingSellerId = sellerIds.find((id) => !prefs[id]);
+        if (missingSellerId) {
+            const sellerName = grouped[missingSellerId]?.seller?.seller_name || "one of your sellers";
+            setError(pendingTransportProposals[missingSellerId]
+                ? `Waiting for ${sellerName} to approve your transport option before you can check out.`
+                : `Please set a transport preference for ${sellerName} before checking out.`);
+            return;
         }
 
-        const res = await checkoutCart(token, { shippingAddressId: effectiveAddressId });
-        setChecking(false);
-        if (!res?.success) return setError(res?.message || "Couldn't place the order.");
-        setPayingGroupId(res.orderGroupId);
+        setChecking(true);
+        let navigating = false;
+        try {
+            await flushPendingWrites();
+            const transportPreferencesPayload = Object.entries(prefs)
+                .filter(([, pref]) => pref?.routeOptionId)
+                .map(([sellerId, pref]) => ({ sellerId, routeOptionId: pref.routeOptionId }));
+
+            const res = await checkoutCart(token, { shippingAddressId: selectedAddressId, transportPreferences: transportPreferencesPayload });
+            if (!res?.success) { setError(res?.message || "Couldn't place the order."); return; }
+
+            // The order group exists (awaiting payment). Send the buyer to JioPay for the whole cart.
+            // If this step fails, tapping the button again resumes the same pending group.
+            const pay = await startGroupPayment(token, res.orderGroupId);
+            if (!pay?.success) { setError(pay?.message || "Couldn't start the payment. Tap the button again to retry."); return; }
+            navigating = redirectToGateway(pay.redirectUrl);
+            if (!navigating) setError("Couldn't open the payment page. Tap the button again to retry.");
+        } finally {
+            // While the browser navigates to the gateway keep the spinner up.
+            if (!navigating) setChecking(false);
+        }
+    };
+
+    const handleTransportResolved = (sellerId, result) => {
+        const isPending = !!result?.pending;
+        const nextPrefs = { ...transportPreferences, [sellerId]: isPending ? null : (result || null) };
+        const nextPending = { ...pendingTransportProposals, [sellerId]: isPending ? result : null };
+
+        setTransportPreferences(nextPrefs);
+        setPendingTransportProposals(nextPending);
+        setTransportRemovedNotices((prev) => ({ ...prev, [sellerId]: null }));
+
+        if (checkoutAfterTransportRef.current) {
+            if (!result || isPending) {
+                checkoutAfterTransportRef.current = false;
+                setActiveTransportSellerId(null);
+                return;
+            }
+            const nextNeeds = sellerIds.filter((id) => !nextPrefs[id] && !nextPending[id]);
+            if (nextNeeds.length) { setActiveTransportSellerId(nextNeeds[0]); return; }
+            checkoutAfterTransportRef.current = false;
+            setActiveTransportSellerId(null);
+            if (sellerIds.every((id) => nextPrefs[id])) handleCheckout(nextPrefs);
+            return;
+        }
+        setActiveTransportSellerId(null);
+    };
+
+    /* ---- primary CTA ---- */
+    const missingIds = sellerIds.filter((id) => !transportPreferences[id]);
+    const needSelectIds = missingIds.filter((id) => !pendingTransportProposals[id]);
+    const waitingIds = missingIds.filter((id) => pendingTransportProposals[id]);
+    const ctaLabel = !selectedAddressId ? "Add delivery address"
+        : needSelectIds.length ? "Select transport & pay"
+            : waitingIds.length ? "Waiting for seller approval"
+                : "Proceed to pay";
+    const ctaDisabled = checking || hasStockBlock || anyGroupBlocked || (!needSelectIds.length && waitingIds.length > 0);
+
+    const handlePrimary = () => {
+        setError(null);
+        if (!selectedAddressId) { addressBookRef.current?.openChange(); return; }
+        if (needSelectIds.length) {
+            checkoutAfterTransportRef.current = true;
+            setActiveTransportSellerId(needSelectIds[0]);
+            return;
+        }
+        handleCheckout();
     };
 
     if (loading) return <div className="flex min-h-[60vh] items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" style={{ color: C.muted }} /></div>;
 
     return (
-        <div className="mx-auto min-h-screen max-w-3xl px-2.5 pb-32 pt-3 sm:px-4">
-            <div className="mt-3 ps-2 flex items-center gap-3">
+        <div className="mx-auto min-h-screen max-w-3xl px-2.5 pb-40 pt-3 sm:px-4">
+            <div className="mt-3 flex items-center justify-between gap-3 ps-2">
                 <h1 className="font-extrabold" style={{ color: C.ink, fontSize: "clamp(20px,1.8vw,26px)" }}>Cart</h1>
             </div>
 
@@ -402,11 +659,27 @@ export default function CartPage() {
                 <div className="mt-16 flex flex-col items-center text-center">
                     <ShoppingCart className="h-10 w-10" style={{ color: C.muted }} />
                     <p className="mt-3 font-bold" style={{ color: C.ink }}>Your cart is empty</p>
+                    <button onClick={() => navigate("/")} className="mt-4 rounded-xl px-5 py-2.5 text-[13px] font-bold text-white"
+                        style={{ background: "linear-gradient(135deg, #d2462b 0%, #c71f11 100%)" }}>
+                        Continue shopping
+                    </button>
                 </div>
             ) : (
                 <>
+                    {/* Delivery address */}
+                    <div className="mt-3 rounded-2xl border p-3.5" style={{ borderColor: C.hair }}>
+                        <p className="mb-2.5 flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-[0.08em]" style={{ color: C.muted }}>
+                            <MapPin className="h-3.5 w-3.5" /> Delivery address
+                        </p>
+                        <AddressBook ref={addressBookRef} disabled={checking} />
+                    </div>
+
                     {Object.entries(grouped).map(([sellerId, g]) => {
                         const groupStatus = groupConstraintStatus[sellerId];
+                        const pref = transportPreferences[sellerId];
+                        const pendingProposal = pendingTransportProposals[sellerId];
+                        const removedNotice = transportRemovedNotices[sellerId];
+
                         return (
                             <div key={g.seller.seller_id} className="mt-4 rounded-2xl border p-3.5" style={{ borderColor: C.hair }}>
                                 <p className="flex items-center gap-1.5 text-[13px] font-extrabold" style={{ color: C.ink }}><Store className="h-3.5 w-3.5" /> {g.seller.seller_name}</p>
@@ -420,16 +693,18 @@ export default function CartPage() {
                                         const itemBlockedByLocation = groupStatus?.blockedItems?.some((b) => b.item.cart_item_id === it.cart_item_id);
                                         return (
                                             <div key={it.cart_item_id} className="flex flex-col gap-1">
-                                                <div className="flex items-center gap-3">
-                                                    <img src={it.product_image} className="h-12 w-12 rounded-lg border object-cover" style={{ borderColor: C.hair }} />
+                                                <div className="flex cursor-pointer items-center gap-3" onClick={() => setViewingItem(it)}
+                                                    role="button" tabIndex={0}
+                                                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setViewingItem(it); } }}>
+                                                    <img src={it.product_image} alt="" className="h-12 w-12 rounded-lg border object-cover" style={{ borderColor: C.hair }} />
                                                     <div className="min-w-0 flex-1">
                                                         <p className="truncate text-[13.5px] font-bold" style={{ color: C.ink }}>{it.product_name}</p>
                                                         <div className="mt-1 flex items-center gap-2">
-                                                            <button onClick={() => handleQty(it.submission_id, it.quantity - 1, it.moq)} disabled={atFloor}
-                                                                className="h-6 w-6 rounded border text-xs disabled:opacity-30" style={{ borderColor: C.hair }}>−</button>
-                                                            <span className="text-[12.5px] font-bold tabular-nums">{it.quantity}</span>
-                                                            <button onClick={() => handleQty(it.submission_id, it.quantity + 1, it.moq)} disabled={atCeiling}
-                                                                className="h-6 w-6 rounded border text-xs disabled:opacity-30" style={{ borderColor: C.hair }}>+</button>
+                                                            <QtyStepper value={it.quantity} min={floor} disabled={atCeiling && atFloor}
+                                                                onChange={(v) => {
+                                                                    if (stock.capped && v > stock.max) return;
+                                                                    handleQty(it.submission_id, v, it.moq);
+                                                                }} />
                                                             <span className="text-[11px] font-semibold" style={{ color: C.muted }}>{saleUnitLabel(it.units_per_master_pack)}(s)</span>
                                                         </div>
                                                         {atFloor && floor > 1 && (
@@ -437,11 +712,7 @@ export default function CartPage() {
                                                                 At the seller's MOQ ({floor} {saleUnitLabel(it.units_per_master_pack)}{floor === 1 ? "" : "s"}) — remove the item instead of going lower.
                                                             </p>
                                                         )}
-                                                        {stock.outOfStock && (
-                                                            <p className="mt-0.5 text-[10.5px] font-bold tracking-wide text-red-600">
-                                                                Out of stock with this seller — remove to continue.
-                                                            </p>
-                                                        )}
+                                                        {stock.outOfStock && <p className="mt-0.5 text-[10.5px] font-bold tracking-wide text-red-600">Out of stock with this seller — remove to continue.</p>}
                                                         {!stock.outOfStock && stock.exceeds && (
                                                             <p className="mt-0.5 text-[10.5px] font-bold tracking-wide text-red-600">
                                                                 Only {stock.max} {saleUnitLabel(it.units_per_master_pack)}{stock.max === 1 ? "" : "s"} available from this seller — reduce quantity to continue.
@@ -454,7 +725,9 @@ export default function CartPage() {
                                                         )}
                                                     </div>
                                                     <p className="text-[13.5px] font-extrabold tabular-nums">₹{inr(p.lineTotal)}</p>
-                                                    <button onClick={() => handleRemove(it.submission_id)}><Trash2 className="h-4 w-4" style={{ color: C.muted }} /></button>
+                                                    <button aria-label="Remove item" onClick={(e) => { e.stopPropagation(); handleRemove(it.submission_id); }}>
+                                                        <Trash2 className="h-4 w-4" style={{ color: C.muted }} />
+                                                    </button>
                                                 </div>
                                             </div>
                                         );
@@ -464,97 +737,92 @@ export default function CartPage() {
                                 {groupStatus?.windowStatus && !groupStatus.windowStatus.open && (
                                     <div className="mt-2.5 flex items-start gap-1.5 rounded-lg px-3 py-2" style={{ background: "#fef3c7" }}>
                                         <Clock className="mt-[1px] h-3 w-3 shrink-0" style={{ color: "#a16207" }} />
-                                        <span className="text-[11.5px] font-semibold leading-snug tracking-wider" style={{ color: "#a16207" }}>
-                                            {groupStatus.windowStatus.message}
-                                        </span>
+                                        <span className="text-[11.5px] font-semibold leading-snug tracking-wider" style={{ color: "#a16207" }}>{groupStatus.windowStatus.message}</span>
                                     </div>
                                 )}
                                 {groupStatus?.blocked && (
-                                    <ConstraintNotice reasons={[
-                                        groupStatus.blockedItems.length > 0 && {
-                                            icon: MapPin,
-                                            message: groupStatus.blockedItems.length === 1
-                                                ? groupStatus.blockedItems[0].status.message
-                                                : `${groupStatus.blockedItems.length} items from this seller aren't deliverable to your selected address.`,
-                                        },
-                                    ]} />
+                                    <ConstraintNotice reasons={[{
+                                        icon: MapPin,
+                                        message: groupStatus.blockedItems.length === 1
+                                            ? groupStatus.blockedItems[0].status.message
+                                            : `${groupStatus.blockedItems.length} items from this seller aren't deliverable to your selected address.`,
+                                    }]} />
                                 )}
+
+                                {/* Per-seller transport */}
+                                <div className="mt-3 flex flex-col gap-2 rounded-xl border px-3.5 py-3" style={{ borderColor: C.hair }}>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <p className="flex items-center gap-1.5 text-[11px] font-bold tracking-wider" style={{ color: C.muted }}>
+                                            <Truck className="h-3.5 w-3.5" /> Preferred transport
+                                        </p>
+                                        <button type="button" disabled={!selectedAddressId}
+                                            onClick={() => { checkoutAfterTransportRef.current = false; setActiveTransportSellerId(sellerId); }}
+                                            className="shrink-0 text-[12px] font-bold tracking-wide disabled:opacity-40" style={{ color: C.secondary }}>
+                                            {pref || pendingProposal ? "Change" : "Select"}
+                                        </button>
+                                    </div>
+                                    {pref ? (
+                                        <p className="text-[13px] font-bold tracking-wide" style={{ color: C.ink }}>{routeTransportModeLabel(pref.mode)}</p>
+                                    ) : pendingProposal ? (
+                                        <div className="flex flex-col gap-1">
+                                            <p className="text-[13px] font-bold tracking-wide" style={{ color: C.ink }}>{routeTransportModeLabel(pendingProposal.mode)}</p>
+                                            <p className="text-[11px] font-semibold tracking-wide" style={{ color: "#92600A" }}>
+                                                Awaiting the seller's approval. You can check out with this seller once it's approved.
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <p className="text-[12px] font-semibold tracking-wide" style={{ color: C.muted }}>
+                                            Not selected yet — we'll ask when you tap "Select transport & pay".
+                                        </p>
+                                    )}
+                                    {removedNotice && <Notice tone="warn">{removedNotice}</Notice>}
+                                </div>
                             </div>
                         );
                     })}
 
-                    <div className="mt-4 rounded-2xl border p-3.5" style={{ borderColor: C.hair }}>
-                        <p className="flex items-center gap-1.5 text-[12px] font-extrabold uppercase" style={{ color: C.muted }}>
-                            <MapPin className="h-3.5 w-3.5" /> Shipping address
-                        </p>
-
-                        {!showNewAddress && addresses.length > 0 && (
-                            <div className="mt-2 flex flex-col gap-2">
-                                {addresses.map((a) => (
-                                    <button
-                                        key={a.id}
-                                        onClick={() => setAddressId(a.id)}
-                                        className="rounded-xl border p-2.5 text-left"
-                                        style={{ borderColor: addressId === a.id ? C.secondary : C.hair, background: addressId === a.id ? `${C.secondary}08` : "#fff" }}
-                                    >
-                                        <p className="text-[12.5px] font-bold">{a.label} — {a.contact_name}</p>
-                                        <p className="text-[11.5px]" style={{ color: C.muted }}>{a.address_line1}, {a.city}, {a.state} - {a.pincode}</p>
-                                    </button>
-                                ))}
-                                <button type="button" onClick={() => setShowNewAddress(true)} className="flex w-fit items-center gap-1.5 text-[12px] font-bold tracking-wide" style={{ color: C.secondary }}>
-                                    <Plus className="h-3.5 w-3.5" /> Add a new address
+                    <div className="fixed bottom-16 left-0 right-0 z-[1] border-t bg-white/95 px-4 py-3 backdrop-blur md:bottom-0">
+                        <div className="mx-auto max-w-3xl">
+                            {error && <p className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-[12.5px] font-semibold text-red-700">{error}</p>}
+                            <div className="flex items-center justify-between gap-3">
+                                <div>
+                                    <p className="text-[11px] font-bold uppercase" style={{ color: C.muted }}>Total</p>
+                                    <p className="text-[18px] font-extrabold tabular-nums">₹{inr(grandTotal)}</p>
+                                </div>
+                                <button onClick={handlePrimary} disabled={ctaDisabled}
+                                    className="rounded-xl px-6 py-3 text-[13.5px] font-bold text-white disabled:opacity-50"
+                                    style={{ background: "linear-gradient(135deg, #d2462b 0%, #c71f11 100%)" }}>
+                                    {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : ctaLabel}
                                 </button>
                             </div>
-                        )}
-
-                        {showNewAddress && (
-                            <div className="mt-2 flex flex-col gap-2.5">
-                                <div className="grid grid-cols-2 gap-2.5">
-                                    <TextField dense label="Contact name" value={newAddress.contact_name} onChange={(v) => setAddrField("contact_name", v)} />
-                                    <TextField dense label="Phone" value={newAddress.contact_phone} onChange={(v) => setAddrField("contact_phone", v)} />
-                                </div>
-                                <TextField dense label="Address line 1" value={newAddress.address_line1} onChange={(v) => setAddrField("address_line1", v)} />
-                                <TextField dense label="Address line 2 (optional)" value={newAddress.address_line2} onChange={(v) => setAddrField("address_line2", v)} />
-                                <div className="grid grid-cols-3 gap-2.5">
-                                    <TextField dense label="City" value={newAddress.city} onChange={(v) => setAddrField("city", v)} />
-                                    <TextField dense label="State" value={newAddress.state} onChange={(v) => setAddrField("state", v)} />
-                                    <TextField dense label="Pincode" value={newAddress.pincode} onChange={(v) => setAddrField("pincode", v)} />
-                                </div>
-                                {addresses.length > 0 && (
-                                    <button type="button" onClick={() => setShowNewAddress(false)} className="w-fit text-[12px] font-bold tracking-wide" style={{ color: C.muted }}>
-                                        Use a saved address instead
-                                    </button>
-                                )}
-                            </div>
-                        )}
-                    </div>
-
-                    {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-[12.5px] font-semibold text-red-700">{error}</p>}
-
-                    <div className="fixed z-[1] bottom-0 md:bottom-0 left-0 right-0 border-t bg-white/95 px-4 py-3 backdrop-blur">
-                        <div className="mx-auto flex max-w-3xl items-center justify-between">
-                            <div>
-                                <p className="text-[11px] font-bold uppercase" style={{ color: C.muted }}>Total</p>
-                                <p className="text-[18px] font-extrabold tabular-nums">₹{inr(grandTotal)}</p>
-                            </div>
-                            <button onClick={handleCheckout} disabled={checking || hasStockBlock || anyGroupBlocked}
-                                className="rounded-xl px-6 py-3 text-[13.5px] font-bold text-white disabled:opacity-50"
-                                style={{ background: "linear-gradient(135deg, #d2462b 0%, #c71f11 100%)" }}>
-                                {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : "Proceed to pay"}
-                            </button>
                         </div>
                     </div>
                 </>
             )}
-            {payingGroupId && (
-                <GroupPaymentQRModal
-                    token={token}
-                    groupId={payingGroupId}
-                    onClose={() => { setPayingGroupId(null); load(); reloadCartBadge(); }}
-                    onDoneViewOrders={() => navigate("/orders")}
+
+            {activeTransportSellerId && grouped[activeTransportSellerId] && (
+                <TransportPreferenceModal
+                    open
+                    seller={sellerObjFor(grouped[activeTransportSellerId])}
+                    destAddressId={selectedAddressId}
+                    removedNotice={transportRemovedNotices[activeTransportSellerId]}
+                    onIntentSource="cart"
+                    onCaptureIntent={() => ({ cartSellerId: activeTransportSellerId })}
+                    onClose={() => { checkoutAfterTransportRef.current = false; setActiveTransportSellerId(null); }}
+                    onAddressChange={() => { /* address lives in BuyerAddressContext */ }}
+                    onResolved={(result) => handleTransportResolved(activeTransportSellerId, result)}
                 />
             )}
 
+            {viewingItem && <CartItemDetailModal item={viewingItem} onClose={() => setViewingItem(null)} />}
         </div>
+    );
+}
+
+export default function CartPage() {
+    return (
+        <BuyerAddressProvider>
+            <CartPageInner />
+        </BuyerAddressProvider>
     );
 }

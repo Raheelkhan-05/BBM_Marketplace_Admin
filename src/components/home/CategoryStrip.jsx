@@ -1,17 +1,13 @@
 // components/home/CategoryStrip.jsx
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Box, LayoutGrid } from "lucide-react";
 import { searchCategories } from "../../utils/api";
 import { supabase } from "../../utils/supabaseClient";
 
 const C = {
-    ink: "#141B22",
+    ink: "#6c6c6cff",
     muted: "#5B6672",
-    accent: "#ffffff",
-    accentTint: "#D2462B",
-    accentTintIcon: "#ffffff",
-    hair: "rgba(20,27,34,0.10)",
+    accent: "#0765CD",
     hairSoft: "rgba(20,27,34,0.07)",
 };
 const EASE = [0.16, 1, 0.3, 1];
@@ -54,6 +50,33 @@ function upsertSorted(list, category) {
     return [...withoutExisting.slice(0, idx), category, ...withoutExisting.slice(idx)];
 }
 
+// Borderless tab-style button: text only, with a blue underline when active.
+function StripButton({ active, onClick, children, motionProps = {} }) {
+    return (
+        <motion.button
+            onClick={onClick}
+            whileTap={{ scale: 0.96 }}
+            className="relative flex shrink-0 items-center px-3 py-1"
+            {...motionProps}
+        >
+            <span
+                className="whitespace-nowrap text-[12.5px] font-bold tracking-wide transition-colors duration-150"
+                style={{ color: active ? C.accent : C.ink }}
+            >
+                {children}
+            </span>
+            <span
+                aria-hidden
+                className="absolute inset-x-3 bottom-0 h-[2.5px] origin-center rounded-full transition-transform duration-200"
+                style={{
+                    background: C.accent,
+                    transform: active ? "scaleX(1)" : "scaleX(0)",
+                }}
+            />
+        </motion.button>
+    );
+}
+
 export default function CategoryStrip({ activeCategoryId, onSelect }) {
     const cached = readCache();
     const [categories, setCategories] = useState(cached || []);
@@ -79,24 +102,16 @@ export default function CategoryStrip({ activeCategoryId, onSelect }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // ...realtime useEffect stays exactly as-is below this
-
     // Live updates — a category being inserted, or an existing one
     // flipping to/from review_status = 'approved', is reflected in the
     // strip immediately without a refetch or page reload. Runs once per
     // mount; cleaned up on unmount so switching pages doesn't leak
     // subscriptions.
-    // components/home/CategoryStrip.jsx — only the second useEffect changes
-
     useEffect(() => {
-        // CHANGED: was subscribing immediately on mount, opening a websocket
-        // connection that competes with the category fetch and the product
-        // feed fetch for the network during the page's most latency-sensitive
-        // window. A category being approved live is not something that needs
-        // to reach this component within the first second of page load — a
-        // short defer (mirrors the DeferredMount pattern already used in
-        // App.jsx for InstallAppPrompt etc.) lets the above-the-fold content
-        // finish its own fetches first.
+        // Deferred subscribe: opening a websocket on mount competes with the
+        // category fetch and the product feed fetch during the page's most
+        // latency-sensitive window. A short defer (mirrors the DeferredMount
+        // pattern in App.jsx) lets the above-the-fold content finish first.
         let cancelled = false;
         let channel = null;
         const timer = setTimeout(() => {
@@ -147,26 +162,10 @@ export default function CategoryStrip({ activeCategoryId, onSelect }) {
     const allActive = !activeCategoryId;
 
     return (
-        <div className="flex gap-2 overflow-x-auto px-0.5 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <motion.button
-                onClick={() => onSelect(null)}
-                whileTap={{ scale: 0.96 }}
-                className="flex shrink-0 items-center gap-2 rounded-full py-1.5 pl-1.5 pr-3.5 transition-colors duration-150"
-                style={{
-                    background: allActive ? C.accentTint : "#fff",
-                    border: `1.5px solid ${allActive ? C.accent : C.hair}`,
-                }}
-            >
-                <span
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
-                    style={{ background: allActive ? C.accentTintIcon : "#F1F3F4" }}
-                >
-                    <LayoutGrid className="h-3 w-3" style={{ color: C.muted }} />
-                </span>
-                <span className="whitespace-nowrap text-[12.5px] font-bold tracking-wide" style={{ color: allActive ? C.accent : C.ink }}>
-                    All
-                </span>
-            </motion.button>
+        <div className="pt-2.5 flex gap-1 overflow-x-auto px-0.5 py-1 md:mt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <StripButton active={allActive} onClick={() => onSelect(null)}>
+                All
+            </StripButton>
 
             {loading
                 ? Array.from({ length: 10 }).map((_, i) => (
@@ -175,24 +174,19 @@ export default function CategoryStrip({ activeCategoryId, onSelect }) {
                 : categories.map((cat, i) => {
                     const active = activeCategoryId === cat.id;
                     return (
-                        <motion.button
+                        <StripButton
                             key={cat.id}
+                            active={active}
                             onClick={() => onSelect(active ? null : cat)}
-                            layout
-                            initial={{ opacity: 0, x: 8 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ duration: 0.25, delay: Math.min(i * 0.02, 0.2), ease: EASE }}
-                            whileTap={{ scale: 0.96 }}
-                            className="flex shrink-0 items-center rounded-full py-1.5 px-3.5 transition-colors duration-150"
-                            style={{
-                                background: active ? C.accentTint : "#fff",
-                                border: `1.5px solid ${active ? C.accent : C.hair}`,
+                            motionProps={{
+                                layout: true,
+                                initial: { opacity: 0, x: 8 },
+                                animate: { opacity: 1, x: 0 },
+                                transition: { duration: 0.25, delay: Math.min(i * 0.02, 0.2), ease: EASE },
                             }}
                         >
-                            <span className="whitespace-nowrap text-[12.5px] font-bold tracking-wide" style={{ color: active ? C.accent : C.ink }}>
-                                {cat.name}
-                            </span>
-                        </motion.button>
+                            {cat.name}
+                        </StripButton>
                     );
                 })}
         </div>

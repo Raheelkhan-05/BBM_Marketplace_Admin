@@ -1,89 +1,74 @@
 // src/components/Layout.jsx
-import { createContext, useContext, useState } from "react";
+//
+// NOTE: NotificationsProvider, CartProvider, ChatProvider, ListingsProvider,
+// HelpRequestProvider and TransportLibraryProvider are provided ONCE by AppShell
+// (App.jsx wraps <Layout /> inside <AppShell />). Do not re-wrap them here, or every
+// page under Layout gets its own copy of state and socket listeners, and the
+// BottomNavStrip (which lives in AppShell) reads a different copy than the pages.
+//
+// The lightbox visibility context also lives in AppShell now (so Grow / Save / Sales pages can use
+// ImageLightbox too). It is re-exported below so existing imports from "./Layout.jsx" keep working.
+import { useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import Header from "./Header.jsx";
 import Footer from "./Footer.jsx";
-import BottomNavStrip from "./BottomNavStrip.jsx";
-import BackgroundAmbience from "./landing/BackgroundAmbience.jsx";
-import { useAuth } from "../context/AuthContext.jsx";
-import { NotificationsProvider } from "../context/NotificationsContext.jsx";
-import { TransportLibraryProvider } from "../context/TransportLibraryContext.jsx";
+import { BuyerAddressProvider } from "../context/BuyerAddressContext.jsx";
+import { OrderResumeProvider } from "../context/OrderResumeContext.jsx";
+import { useLightboxVisibility } from "../context/LightboxVisibilityContext.jsx";
 import OrderNotificationToast from "./OrderNotificationToast.jsx";
 import ChatNotificationToast from "./ChatNotificationToast.jsx";
-import { CartProvider } from "../context/CartContext.jsx";
-import { ChatProvider } from "../context/ChatContext.jsx";
-import { ListingsProvider } from "../context/ListingsContext.jsx";
-import { HelpRequestProvider } from "../context/HelpRequestContext.jsx";
+import CreditNotificationToast from "./CreditNotificationToast.jsx";
+import TransportResolutionBanner from "./TransportResolutionBanner.jsx";
+import GlobalBuyNowLauncher from "./GlobalBuyNowLauncher.jsx";
 import HelpBulb from "./HelpBulb.jsx";
 
-const LightboxVisibilityContext = createContext(null);
-
-// Outside <Layout> (global modals, standalone routes) there is no bottom nav to hide,
-// so fall back to a harmless no-op instead of crashing.
-const LIGHTBOX_FALLBACK = { lightboxOpen: false, setLightboxOpen: () => { } };
-
-export function useLightboxVisibility() {
-  return useContext(LightboxVisibilityContext) || LIGHTBOX_FALLBACK;
-}
+export { useLightboxVisibility };
 
 export default function Layout() {
   const { pathname } = useLocation();
-  const { isLoggedIn, profile } = useAuth();
-  const isLandingPage = pathname === "/";
   const isAdminPage = pathname.startsWith("/admin");
   const isWalletPage = pathname.startsWith("/seller/wallet");
   const isChatDetailPage = /^\/chat\/[^/]+/.test(pathname);
-  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const isOrdersPage = pathname.startsWith("/orders/");
+  const isSalesOrdersPage = pathname.startsWith("/seller/orders/");
+
+  const { lightboxOpen } = useLightboxVisibility();
   const [rfqOpen, setRfqOpen] = useState(false);
 
-  // Display-only now — no redirect here. An unfinished signup can freely
-  // browse / and /home (via the back button off /login), just without the
-  // bottom nav, same as the header shows them as a guest (see Header.jsx's
-  // effectiveLoggedIn). The one-time redirect on initial app load lives in
-  // OnboardingGate (App.jsx) instead.
-  const onboardingIncomplete = isLoggedIn && profile && profile.onboarding_step !== "done";
-
-  const showBottomNav = !isLandingPage && !isAdminPage && !isWalletPage && !isChatDetailPage && !lightboxOpen && !onboardingIncomplete;
+  // Same rule AppShell uses to decide whether the bottom dock is shown.
+  const showBottomNav = !isAdminPage && !isWalletPage && !isChatDetailPage
+    && !isSalesOrdersPage && !isOrdersPage && !lightboxOpen;
 
   return (
-    <NotificationsProvider>
-      <TransportLibraryProvider>
-        <CartProvider>
-          <ChatProvider>
-            <ListingsProvider>
-              <HelpRequestProvider>
+    <BuyerAddressProvider>
+      <OrderResumeProvider>
+        <div className="relative min-h-screen bg-[#FFFFFF] overflow-x-clip">
+          <div className="relative z-1">
+            <Header onOpenRfq={() => setRfqOpen(true)} />
 
-                <LightboxVisibilityContext.Provider value={{ lightboxOpen, setLightboxOpen }}>
-                  <div className="relative min-h-screen bg-[#FFFFFF] overflow-x-clip">
-                    <div className="relative z-1">
-                      <Header onOpenRfq={() => setRfqOpen(true)} />
+            <main className={showBottomNav ? "pb-10 md:pb-0" : ""}>
+              <Outlet />
+            </main>
 
-                      <main className={showBottomNav ? "pb-10 md:pb-0" : ""}>
-                        <Outlet />
-                      </main>
+            <div className="hidden md:block">
+              <Footer />
+            </div>
+          </div>
 
-                      <div className="hidden md:block">
-                        <Footer />
-                      </div>
+          {/* Desktop only: mobile's helpline lives inside the BottomNavStrip menu. */}
+          <div className="hidden md:block">
+            <HelpBulb />
+          </div>
 
-                      {showBottomNav && <BottomNavStrip onOpenRfq={() => setRfqOpen(true)} />}
-                    </div>
-
-                    {/* Center-screen popup for order (purchase + sales) notifications.
-                Portals to document.body, so placement in the tree doesn't
-                matter — it just needs to be inside NotificationsProvider and
-                inside the Router (it uses useNavigate). */}
-                    <HelpBulb />
-                    <OrderNotificationToast />
-                    <ChatNotificationToast />
-                  </div>
-                </LightboxVisibilityContext.Provider>
-              </HelpRequestProvider>
-            </ListingsProvider>
-
-          </ChatProvider>
-        </CartProvider>
-      </TransportLibraryProvider>
-    </NotificationsProvider>
+          {/* Toasts portal to document.body; they only need to be inside the
+              providers (from AppShell) and the Router. */}
+          <CreditNotificationToast />
+          <OrderNotificationToast />
+          <ChatNotificationToast />
+          <TransportResolutionBanner />
+          <GlobalBuyNowLauncher />
+        </div>
+      </OrderResumeProvider>
+    </BuyerAddressProvider>
   );
 }

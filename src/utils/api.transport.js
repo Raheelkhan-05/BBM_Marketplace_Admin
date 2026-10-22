@@ -116,3 +116,7 @@ export function saveBuyerTransportPreference({ sellerId, destState, destCity, pr
         token,
     });
 }
+
+export function fetchBuyerFallbackLocation(token) {
+    return request(`/geo/buyer-fallback-location`, { token });
+}

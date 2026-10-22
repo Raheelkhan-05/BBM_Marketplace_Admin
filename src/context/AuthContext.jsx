@@ -6,43 +6,14 @@ const AuthContext = createContext(null);
 const DEV_TOKEN_KEY = "bbm_dev_bypass_token";
 const AUTH_TOKEN_KEY = "bbm_auth_token";
 
-// REMOVED (this pass): the EVENTS list + channelRef/listenersRef/
-// openChannel/scheduleResubscribe/subscribeUserEvent machinery that used
-// to live here. It opened a Supabase Realtime broadcast channel
-// (`supabase.channel(\`user-${chanToken}\`)`) — but nothing in this app's
-// backend has ever published to Supabase Realtime. Every real-time push
-// (notifications, submissions_changed, orders_changed) goes out through
-// this app's own Socket.IO server instead (see services/realtimeBroadcast.js
-// -> getIO().to(`user:${userId}`).emit(...), and socket/chatSocket.js,
-// which is what actually joins `user:${userId}` on connect).
-//
-// That mismatch meant every consumer of subscribeUserEvent
-// (useRealtimeOrder.js, useRealtimeOrders.js, and
-// SellerManageListingsPage's "submissions_changed" listener) was
-// subscribed to a channel nothing could ever reach — updates only ever
-// appeared after a manual refresh or after the tab-visibility resync
-// safety net below happened to fire.
-//
-// The fix is NOT here: real-time order/listing updates now go through
-// useSocket() (context/SocketContext.jsx) directly, the same connection
-// useRealtimeNotifications.js already used successfully. If you have any
-// other call site still destructuring `subscribeUserEvent` from
-// useAuth(), migrate it to `useSocket()` the same way.
-//
-// KEPT: registerResyncHandler/runResync. That part was never broken —
-// it's a plain in-memory callback registry (no channel involved) used as
-// a safety net for "the tab regained focus/visibility, re-fetch in case
-// something was missed while it was backgrounded." Multiple pages
-// (SellerManageListingsPage, and now the order hooks) still rely on it.
+// (Realtime note from the previous version kept in spirit: every real-time push goes through
+// Socket.IO via useSocket(); registerResyncHandler/runResync below is the tab-focus safety net.)
 
 // Reads whichever session token is in localStorage, synchronously, with
 // no async work at all. Used as AuthProvider's INITIAL state (see
 // useState below) — not inside an effect — so "is this person logged
 // in" is known the instant this component first renders, before the
-// browser has even painted anything. This is what removes the
-// spinner-while-we-check-auth gap: there's nothing to wait for, because
-// a value already sitting in localStorage doesn't need a network round
-// trip to read.
+// browser has even painted anything.
 function readStoredSession() {
   if (typeof window === "undefined") return null;
   const authToken = localStorage.getItem(AUTH_TOKEN_KEY);
@@ -57,21 +28,12 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(readStoredSession);
   const [profile, setProfile] = useState(null);
 
-  // Renamed in spirit (kept as `initializing` for anything already
-  // reading it) — this now ONLY tracks whether the PROFILE fetch for an
-  // already-known session is still in flight. It never gates whether we
-  // know if someone is logged in, since that's resolved synchronously
-  // above. A guest (no stored token) starts with this already false —
-  // there is nothing to wait for.
+  // Only tracks whether the PROFILE fetch for an already-known session is
+  // still in flight. A guest (no stored token) starts with this already false.
   const [profileLoading, setProfileLoading] = useState(!!session);
 
   // Consumers can register a "catch up" refetch that runs whenever the
-  // tab regains focus/visibility, or comes back online. Real-time pushes
-  // over a websocket are fire-and-forget: they WILL occasionally be
-  // missed (backgrounded tab, laptop sleep, brief network loss). This is
-  // the safety net that guarantees the UI is never more than a
-  // reconnect/focus away from correct — independent of whichever
-  // transport a given page's live updates use.
+  // tab regains focus/visibility, or comes back online.
   const resyncRef = useRef(new Set());
 
   const registerResyncHandler = useCallback((callback) => {
@@ -85,8 +47,6 @@ export function AuthProvider({ children }) {
     });
   }, []);
 
-  // Treat "tab became visible/focused again" (or came back online) as a
-  // reconnect signal for anything registered via registerResyncHandler.
   useEffect(() => {
     function onVisible() {
       if (document.visibilityState === "visible") runResync();
@@ -115,9 +75,13 @@ export function AuthProvider({ children }) {
           businessProfile: res.businessProfile,
           shop_slug: res.businessProfile?.shop_slug ?? res.shop_slug ?? null,
           notificationChannel: res.notificationChannel,
+          // TEAM: null for a solo company; { id, role, isAdmin, actorId } when the account has a team.
+          // For a team member, `profile` above is the COMPANY's profile (same id chat/orders use).
+          team: res.team ?? null,
         });
         return;
       }
+      // 401 covers an expired session AND a team member who has been removed (TEAM_ACCESS_REMOVED).
       if (res?.status === 401) {
         await clearSession();
         return;
@@ -160,9 +124,9 @@ export function AuthProvider({ children }) {
     return loadProfile(token);
   }, [loadProfile]);
 
-  // Call this after OTP verify / onboarding. Stores the JWT in real-session
+  // Call this after OTP verify / onboarding / joining a team. Stores the JWT in real-session
   // storage (not the dev-bypass key) so isLoggedIn flips true and protected
-  // routes (like /home) unblock immediately.
+  // routes (like /home) unblock immediately. Resolves once the profile has loaded.
   const setAuthSession = useCallback((token) => {
     localStorage.setItem(AUTH_TOKEN_KEY, token);
     setSession({ access_token: token });
@@ -172,11 +136,6 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let mounted = true;
 
-    // The token (if any) was already read synchronously into `session`
-    // by readStoredSession() above, before this component's first
-    // render — so there's no "figuring out if you're logged in" step
-    // left here. The only genuinely async part is fetching the PROFILE
-    // for an existing session, which route guards no longer block on.
     async function init() {
       if (session?.access_token) {
         await loadProfile(session.access_token);
@@ -215,12 +174,13 @@ export function AuthProvider({ children }) {
         session,
         token: session?.access_token,
         profile,
-        // Kept under the same name so nothing else calling useAuth()
-        // needs to change — but it now only reflects "is the profile
-        // for an already-known session still loading", never "do we
-        // know yet whether this person is logged in at all".
         initializing: profileLoading,
         isLoggedIn,
+        effectiveLoggedIn: isLoggedIn,
+        // TEAM
+        isTeamMember: !!profile?.team && !profile.team.isAdmin,
+        isSalesperson: profile?.team?.role === "salesperson",
+        isTeamAdmin: !profile?.team || !!profile.team.isAdmin,
         signOut,
         clearSession,
         setDevSession,

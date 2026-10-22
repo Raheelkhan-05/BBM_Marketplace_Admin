@@ -184,7 +184,7 @@ function BankTransferPanel({ info, bankMethod, setBankMethod, msLeft, hasUpi }) 
             <div className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-[12px] font-semibold leading-snug" style={{ background: `${C.secondary}0f`, color: C.secondary }}>
                 <Clock className="h-3.5 w-3.5 shrink-0" />
                 {formatCountdown(msLeft)} left in this window.
-                {hasUpi && " Prefer scanning a QR instead? Switch to the UPI tab above."}
+                {/* {hasUpi && " Prefer scanning a QR instead? Switch to the UPI tab above."} */}
             </div>
         </>
     );
@@ -195,7 +195,7 @@ export default function GroupPaymentQRModal({ token, groupId, onClose, onDoneVie
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    const [method, setMethod] = useState(DEFAULT_PAYMENT_METHOD); // 'upi' | 'neft'
+    // const [method, setMethod] = useState(DEFAULT_PAYMENT_METHOD); // 'upi' | 'neft'
     const [bankMethod, setBankMethod] = useState("neft"); // 'neft' | 'rtgs', only relevant when method === 'neft'
 
     const [utr, setUtr] = useState("");
@@ -210,24 +210,18 @@ export default function GroupPaymentQRModal({ token, groupId, onClose, onDoneVie
 
     useEffect(() => {
         let cancelled = false;
-        // paymentSession is keyed by id — passing the groupId here works
-        // exactly like it does for a single orderId.
         const cached = loadPaymentSession(groupId);
 
         if (cached) {
             setInfo({
                 groupId,
-                orderNumber: cached.orderNumber, // group_number
+                orderNumber: cached.orderNumber,
                 amount: cached.amount,
-                vpa: cached.vpa,
-                payeeName: cached.payeeName,
-                note: cached.note,
-                upiUri: cached.upiUri,
                 bankDetails: cached.bankDetails,
                 existingProof: null,
             });
             setUtr(cached.utrDraft || "");
-            setMethod(cached.method || DEFAULT_PAYMENT_METHOD);
+            if (cached.method === "neft" || cached.method === "rtgs") setBankMethod(cached.method);
             setStartedAt(cached.startedAt);
             setLoading(false);
         } else {
@@ -253,24 +247,16 @@ export default function GroupPaymentQRModal({ token, groupId, onClose, onDoneVie
             setInfo(res);
             if (res.existingProof?.status === "pending") setSubmitted(true);
             if (res.existingProof?.status === "rejected" && !cached?.utrDraft) setUtr(res.existingProof.utr_number || "");
-            if (res.existingProof?.payment_method && !cached?.method) {
-                const prev = res.existingProof.payment_method;
-                setMethod(prev === "rtgs" || prev === "neft" ? "neft" : "upi");
-                if (prev === "rtgs" || prev === "neft") setBankMethod(prev);
-            } else if (!cached?.method) {
-                setMethod(res.upiUri ? "upi" : "neft");
+            if (res.existingProof?.payment_method === "rtgs" || res.existingProof?.payment_method === "neft") {
+                setBankMethod(res.existingProof.payment_method);
             }
 
             const session = savePaymentSession({
                 orderId: groupId,
                 orderNumber: res.orderNumber,
                 amount: res.amount,
-                vpa: res.vpa,
-                payeeName: res.payeeName,
-                note: res.note,
-                upiUri: res.upiUri,
                 bankDetails: res.bankDetails,
-                method: cached?.method,
+                method: "neft",
                 utrDraft: cached?.utrDraft,
             });
             setStartedAt(session.startedAt);
@@ -303,8 +289,7 @@ export default function GroupPaymentQRModal({ token, groupId, onClose, onDoneVie
         if (!utr.trim()) { setError("Please enter the UTR / transaction reference number."); return; }
         setError(null);
         setSubmitting(true);
-        const submitMethod = method === "neft" ? bankMethod : method;
-        const res = await submitGroupPaymentProof(token, groupId, { utr: utr.trim(), method: submitMethod, screenshotFile });
+        const res = await submitGroupPaymentProof(token, groupId, { utr: utr.trim(), method: bankMethod, screenshotFile });
         setSubmitting(false);
         if (!res?.success) { setError(res?.message || "Couldn't submit payment proof."); return; }
         clearPaymentSession();
@@ -340,9 +325,8 @@ export default function GroupPaymentQRModal({ token, groupId, onClose, onDoneVie
         setInfo(res);
         if (res.existingProof?.status === "pending") setSubmitted(true);
         const session = resetPaymentSession({
-            orderId: groupId, orderNumber: res.orderNumber, amount: res.amount, vpa: res.vpa,
-            payeeName: res.payeeName, note: res.note, upiUri: res.upiUri, bankDetails: res.bankDetails,
-            method, utrDraft: utr,
+            orderId: groupId, orderNumber: res.orderNumber, amount: res.amount, bankDetails: res.bankDetails,
+            method: bankMethod, utrDraft: utr,
         });
         setStartedAt(session.startedAt);
         setMsLeft(PAYMENT_SESSION_TTL_MS);
@@ -434,7 +418,7 @@ export default function GroupPaymentQRModal({ token, groupId, onClose, onDoneVie
                         </div>
                     ) : (
                         <>
-                            {showTabs && (
+                            {/* {showTabs && (
                                 <div
                                     className="flex rounded-xl p-1"
                                     style={{ background: C.hairSoft }}
@@ -461,32 +445,9 @@ export default function GroupPaymentQRModal({ token, groupId, onClose, onDoneVie
                                         <Landmark className="h-3.5 w-3.5" /> NEFT / RTGS
                                     </button>
                                 </div>
-                            )}
+                            )} */}
 
-                            {method === "upi" && hasUpi ? (
-                                <>
-                                    <div className="flex flex-col items-center gap-2 rounded-2xl border p-5" style={{ borderColor: C.hair }}>
-                                        <QRCodeSVG value={info.upiUri} size={200} includeMargin />
-                                        <p className="mt-1 text-[20px] font-extrabold tabular-nums" style={{ color: C.ink }}>₹{info.amount.toLocaleString("en-IN")}</p>
-                                        <p className="text-[12px] font-semibold tracking-wide" style={{ color: C.muted }}>Pay to {info.vpa}</p>
-                                    </div>
-
-                                    {isMobileDevice() && (
-                                        <button onClick={handleOpenUpiApp}
-                                            className="flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-[14px] font-bold tracking-wide text-white"
-                                            style={{ background: "linear-gradient(135deg, #006F83 0%, #047084 100%)" }}>
-                                            <Smartphone className="h-4 w-4" /> Open in UPI app
-                                        </button>
-                                    )}
-
-                                    <div className="flex items-start gap-2 rounded-lg px-3 py-2.5 text-[12px] font-semibold leading-snug" style={{ background: `${C.secondary}0f`, color: C.secondary }}>
-                                        <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                                        Scan the QR (or use the button above on mobile), complete the payment, then enter the UTR below. This single payment covers all sellers in this order.
-                                        You have {formatCountdown(msLeft)} left in this window.
-                                        {hasBank && " Prefer a bank transfer instead? Switch to the NEFT / RTGS tab above."}
-                                    </div>
-                                </>
-                            ) : hasBank ? (
+                            {hasBank ? (
                                 <BankTransferPanel info={info} bankMethod={bankMethod} setBankMethod={setBankMethod} msLeft={msLeft} hasUpi={hasUpi} />
                             ) : null}
 

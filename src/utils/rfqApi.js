@@ -36,6 +36,10 @@ export const createRfq = (token, payload) => request(token, "/rfq", { method: "P
 export const bulkCreateRfq = (token, rows) => request(token, "/rfq/bulk", { method: "POST", body: { rows } });
 export const updateRfq = (token, id, payload) => request(token, `/rfq/${id}`, { method: "PATCH", body: payload });
 export const closeRfq = (token, id) => request(token, `/rfq/${id}/close`, { method: "POST" });
+export const fetchRfqById = async (token, id, { signal } = {}) => {
+    const r = await request(token, `/rfq/${id}`, { signal });
+    return r.success ? { ...r, item: r.enquiry } : r;
+};
 
 // ── admin ──
 export const adminListRfq = (token, { status, q, limit, offset, signal }) =>

@@ -12,16 +12,19 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { Package, CheckCircle2, Info } from "lucide-react";
+import { Package, CheckCircle2, Info, CreditCard } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useNotifications } from "../context/NotificationsContext.jsx";
+import { isCreditNotification } from "../utils/notificationTypes.js";
 
 const HOLD_MS = 3400;
 
 // Same light heuristic NotificationIsland uses, kept local here so this
 // component has no dependency on NotificationIsland's internals.
 function pickIcon(n) {
+    if (isCreditNotification(n)) return CreditCard;
     const t = `${n?.title || ""} ${n?.body || ""}`.toLowerCase();
+
     if (t.includes("shipped") || t.includes("delivered") || t.includes("order")) return Package;
     if (t.includes("approved") || t.includes("confirmed") || t.includes("success")) return CheckCircle2;
     return Info;

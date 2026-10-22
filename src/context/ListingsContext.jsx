@@ -16,6 +16,12 @@ import { useSocket } from "./SocketContext.jsx";
 import { useNotifications } from "./NotificationsContext.jsx";
 import { fetchMySellerSubmissions } from "../utils/api.js";
 import { fetchWalletStatus } from "../utils/walletApi.js";
+import {
+    isSalesOrderNotification, isWalletTopupNotification,
+    isWalletLowBalanceNotification, isListingsSectionNotification,
+} from "../utils/notificationTypes.js";
+import { needsRestock } from "../components/growSeller/sellerHelpers.js";
+
 
 const ListingsContext = createContext(null);
 
@@ -23,14 +29,6 @@ export function useListings() {
     const ctx = useContext(ListingsContext);
     if (!ctx) throw new Error("useListings must be used inside <ListingsProvider>");
     return ctx;
-}
-
-const LOW_STOCK_THRESHOLD = 10;
-function stockState(stock) {
-    if (stock == null) return "unknown";
-    if (Number(stock) <= 0) return "out";
-    if (Number(stock) <= LOW_STOCK_THRESHOLD) return "low";
-    return "ok";
 }
 
 export function ListingsProvider({ children }) {
@@ -58,8 +56,7 @@ export function ListingsProvider({ children }) {
             fetchWalletStatus(token),
         ]);
         if (subsRes?.success) {
-            const count = (subsRes.items || []).filter((it) => stockState(it.stock_quantity) !== "ok").length;
-            setRestockCount(count);
+            setRestockCount((subsRes.items || []).filter(needsRestock).length);
         }
         if (walletRes?.success) setWallet(walletRes.wallet);
     }, [token, isApprovedSeller]);
@@ -71,14 +68,34 @@ export function ListingsProvider({ children }) {
     const reportRestockCount = useCallback((count) => setRestockCount(count), []);
     const reportWallet = useCallback((w) => setWallet(w), []);
 
-    // Same real socket wiring SellerManageListingsPage already uses for
-    // its own resync — keeps the header badge live without polling.
+    // Socket events that mean "submissions / wallet changed".
+    // ASSUMPTION: "wallet_changed" is emitted by the backend. If your event has a
+    // different name, rename it here. The notification listener below is the fallback.
     useEffect(() => {
         if (!socket) return;
         const onChanged = () => reload();
         socket.on("submissions_changed", onChanged);
-        socket.on("wallet_changed", onChanged); // ASSUMPTION: emitted by wallet top-up/commission-accrual flows — rename to match your actual event if different
+        socket.on("wallet_changed", onChanged);
         return () => { socket.off("submissions_changed", onChanged); socket.off("wallet_changed", onChanged); };
+    }, [socket, reload]);
+
+    // Fallback: refetch when a relevant notification arrives. An order can lower
+    // stock (restock count) and a wallet deduction can block the wallet, and neither
+    // is guaranteed to emit the events above. Debounced so a burst causes one refetch.
+    useEffect(() => {
+        if (!socket) return;
+        let t;
+        const onNotif = (p) => {
+            if (!p?.id) return;
+            const relevant =
+                isSalesOrderNotification(p) || isWalletTopupNotification(p) ||
+                isWalletLowBalanceNotification(p) || isListingsSectionNotification(p);
+            if (!relevant) return;
+            clearTimeout(t);
+            t = setTimeout(reload, 400);
+        };
+        socket.on("notification:new", onNotif);
+        return () => { clearTimeout(t); socket.off("notification:new", onNotif); };
     }, [socket, reload]);
 
     const walletLowBalance = !!wallet?.is_blocked;

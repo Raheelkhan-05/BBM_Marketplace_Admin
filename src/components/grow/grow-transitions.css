@@ -1,0 +1,49 @@
+/* components/grow/grow-transitions.css — import AFTER grow-access.css.
+   Every screen of the start flow (landing, auth, check, onboarding, wizard, done) fades and rises in when it
+   mounts, so switching screens or handing over from the loading skeleton never pops.
+   Ends at transform:none so it never creates a containing block for fixed children. */
+@keyframes gsx-rise {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+@keyframes gsx-fade {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+.gs .app>.scr {
+    animation: gsx-rise .34s cubic-bezier(.16, 1, .3, 1) both;
+}
+
+.gs .app>.bar {
+    animation: gsx-fade .3s ease both;
+}
+
+.gs .toast {
+    transition: opacity .25s ease, transform .25s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .gs .app>.scr,
+    .gs .app>.bar {
+        animation: none;
+    }
+
+    .gs .toast {
+        transition: none;
+    }
+}

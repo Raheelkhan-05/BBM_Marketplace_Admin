@@ -1,5 +1,6 @@
 // components/rfq/RfqFormFields.jsx
 // Presentational fields shared by the buyer's post/edit modal and the admin review modal.
+// Quantity: ONE total quantity in the chosen unit (e.g. 500 Kg). No packs, no pack size.
 import { useRef, useState } from "react";
 import { ImagePlus, Loader2, Check } from "lucide-react";
 import { C, TextField, TextAreaField, SelectField, ChipToggleGroup } from "../seller/listingForm/FormPrimitives.jsx";
@@ -72,8 +73,7 @@ export default function RfqFormFields({ form, setForm, errors = {}, token, readO
     };
 
     const qty = Number(form.quantity);
-    const pack = Number(form.packSize);
-    const showTotal = qty > 0 && pack > 0 && form.unit;
+    const showTotal = qty > 0 && form.unit;
     const eq = form.acceptEquivalent;
 
     return (
@@ -114,30 +114,23 @@ export default function RfqFormFields({ form, setForm, errors = {}, token, readO
             </Block>
 
             {/* Quantity */}
-            <Block title="Quantity & packing">
-                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-                    <Anchor k="quantity">
-                        <TextField required dense label="Quantity (in Packs)" inputMode="decimal" placeholder="e.g. 500"
-                            hint="How many Packs do you want to buy?"
-                            value={form.quantity} onChange={(v) => setField("quantity", v.replace(/[^\d.]/g, ""))} error={!!errors.quantity} />
-                        <Err msg={errors.quantity} />
-                    </Anchor>
+            <Block title="Quantity" hint="Enter the final quantity you need in total. No packs to work out.">
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                     <Anchor k="unit">
-                        <SelectField required dense label="Unit" hint="Smallest measure this product is sold in" value={form.unit}
+                        <SelectField required dense label="Unit" hint="The unit you buy this product in" value={form.unit}
                             onChange={(v) => setField("unit", v)} error={!!errors.unit} options={RFQ_UNITS} />
                         <Err msg={errors.unit} />
                     </Anchor>
-                    <Anchor k="packSize">
-                        <TextField required dense label={form.unit ? `Pack size (${form.unit})` : "Pack size"} inputMode="decimal" placeholder="e.g. 10"
-                            hint={form.unit ? `How many ${form.unit} make up 1 Pack. Use 1 if you buy loose.` : "How many Units make up 1 Pack. Use 1 if you buy loose."}
-                            value={form.packSize} onChange={(v) => setField("packSize", v.replace(/[^\d.]/g, ""))} error={!!errors.packSize} />
-                        <Err msg={errors.packSize} />
+                    <Anchor k="quantity">
+                        <TextField required dense label={form.unit ? `Total quantity (${form.unit})` : "Total quantity"} inputMode="decimal" placeholder="e.g. 500"
+                            hint={form.unit ? `The total ${form.unit} you need` : "The total you need"}
+                            value={form.quantity} onChange={(v) => setField("quantity", v.replace(/[^\d.]/g, ""))} error={!!errors.quantity} />
+                        <Err msg={errors.quantity} />
                     </Anchor>
                 </div>
                 {showTotal && (
                     <p className="text-[13px] font-bold tracking-wider" style={{ color: C.ink }}>
-                        Total required: {fmtNum(qty * pack)} {form.unit}
-                        <span className="font-semibold" style={{ color: C.muted }}> ({fmtNum(qty)} Pack{qty === 1 ? "" : "s"} × {fmtNum(pack)} {form.unit})</span>
+                        Total required: {fmtNum(qty)} {form.unit}
                     </p>
                 )}
             </Block>

@@ -20,7 +20,7 @@ export default function AdminLayout() {
             <main className="mx-auto max-w-7xl">
                 <Outlet />
             </main>
-            <BottomNavStrip />
+            {/* <BottomNavStrip /> */}
         </div>
     );
 }

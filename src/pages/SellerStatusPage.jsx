@@ -21,7 +21,7 @@ export default function SellerStatusPage() {
         // Redirect away if this page no longer matches their actual status —
         // e.g. they got approved since they last checked, or never started.
         if (!res.seller) navigate("/seller/onboarding", { replace: true });
-        else if (res.seller.status === "approved") navigate(`/seller/listings`, { replace: true });
+        else if (res.seller.status === "approved") navigate(`/seller/products`, { replace: true });
         else if (res.seller.status === "draft") navigate("/seller/onboarding", { replace: true });
       }
       setLoading(false);

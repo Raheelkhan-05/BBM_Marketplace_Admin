@@ -10,6 +10,7 @@ export function SocketProvider({ children }) {
     const { token } = useAuth();
     const socketRef = useRef(null);
     const [connected, setConnected] = useState(false);
+    const [socket, setSocket] = useState(null);
 
     useEffect(() => {
         if (!token) return;
@@ -31,6 +32,8 @@ export function SocketProvider({ children }) {
             timeout: 10000,
         });
 
+        setSocket(socket);
+
         socket.on("connect", () => { console.log("[socket] connected", socket.id); setConnected(true); });
         socket.on("disconnect", (reason) => { console.log("[socket] disconnected:", reason); setConnected(false); });
         socket.on("connect_error", (err) => console.error("[socket] connect_error:", err.message));
@@ -46,11 +49,13 @@ export function SocketProvider({ children }) {
             socket.removeAllListeners();
             socket.disconnect();
             socketRef.current = null;
+            setSocket(null);
+
         };
     }, [token]);
 
     return (
-        <SocketContext.Provider value={{ socket: socketRef.current, connected }}>
+        <SocketContext.Provider value={{ socket, connected }}>
             {children}
         </SocketContext.Provider>
     );

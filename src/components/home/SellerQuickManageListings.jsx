@@ -542,8 +542,9 @@ function ListingRow({
     const image = it.image || it.brand?.image;
     const gallery = it.images?.length ? it.images : (it.brand?.images?.length ? it.brand.images : (image ? [image] : []));
     const stock = it.stock_quantity;
-    const lowStock = stock != null && stock <= LOW_STOCK_THRESHOLD;
-    const outOfStock = stock != null && stock <= 0;
+    const moq = Number(it.moq) || 0;
+    const outOfStock = stock != null && (moq > 0 ? Number(stock) < moq : Number(stock) <= 0);
+    const lowStock = !outOfStock && stock != null && Number(stock) <= LOW_STOCK_THRESHOLD;
     const isActive = it.is_active !== false; // treat undefined as active for safety
 
     const statusColor = !isActive ? C.muted : outOfStock ? "#c71f11" : lowStock ? "#b45309" : C.secondary;

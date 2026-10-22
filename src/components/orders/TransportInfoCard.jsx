@@ -41,7 +41,10 @@ function DownloadLink({ href, label }) {
 }
 
 export default function TransportInfoCard({ order }) {
-    if (!order?.transport_mode && !order?.buyer_transport_mode) return null;
+    const hasPreference = !!order?.transport_mode || !!order?.buyer_transport_mode;
+    const hasShipmentInfo = !!order?.ship_lr_number || !!order?.ship_details_confirmed_at;
+
+    if (!hasPreference && !hasShipmentInfo) return null;
 
     const agreedSummary = order.transport_mode ? routeOptionSummary(order.transport_mode, order.transport_fields || {}) : null;
     const isShipped = !!order.ship_details_confirmed_at;

@@ -42,6 +42,12 @@ export const ADMIN_NAV_ITEMS = [
         to: "/catalog",
     },
     {
+        id: "seller-listings",
+        label: "Seller Listings",
+        icon: ListChecks,
+        to: "/seller-listings",
+    },
+    {
         id: "report",
         label: "Report",
         icon: TriangleAlert,

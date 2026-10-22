@@ -28,8 +28,8 @@ function FactRow({ label, value }) {
     if (value === null) return null;
     return (
         <div className="flex items-baseline justify-between gap-3 border-b py-2 text-[12px] last:border-b-0" style={{ borderColor: C.hairSoft }}>
-            <span className="shrink-0 font-semibold" style={{ color: C.muted }}>{label}</span>
-            <span className="text-right font-bold" style={{ color: C.ink }}>{String(value)}</span>
+            <span className="shrink-0 font-semibold tracking-wide" style={{ color: C.muted }}>{label}</span>
+            <span className="text-right font-bold tracking-wide" style={{ color: C.ink }}>{String(value)}</span>
         </div>
     );
 }
@@ -456,7 +456,7 @@ export default function BrandItemDetailModal({ brandItemId, onClose, onViewSelle
                             >
                                 <div className="flex items-center gap-1.5">
                                     <Info className="h-4 w-4" style={{ color: C.secondary }} />
-                                    <h3 id="brand-item-modal-title" className="text-[14.5px] font-extrabold" style={{ color: C.ink }}>Product details</h3>
+                                    <h3 id="brand-item-modal-title" className="text-[14.5px] font-extrabold tracking-wide" style={{ color: C.ink }}>Product details</h3>
                                 </div>
                                 <button onClick={requestClose} aria-label="Close" className="rounded-full p-1.5 transition-colors hover:bg-black/[0.05]">
                                     <X className="h-4 w-4" style={{ color: C.muted }} />
@@ -486,26 +486,18 @@ export default function BrandItemDetailModal({ brandItemId, onClose, onViewSelle
 
                                         <div className="mt-4 flex items-start justify-between gap-2">
                                             <div className="min-w-0">
-                                                <p className="text-[16px] font-extrabold leading-tight" style={{ color: C.ink }}>{name}</p>
+                                                <p className="text-[16px] font-extrabold tracking-wide leading-tight" style={{ color: C.ink }}>{name}</p>
                                                 {!brandNotApplicable && brandName && (
                                                     <div className="mt-0.5 flex items-center gap-1.5">
                                                         {brandImage && <img src={brandImage} alt="" className="h-4 w-4 rounded object-cover" />}
-                                                        <p className="text-[12.5px] font-bold" style={{ color: C.primary }}>{brandName}</p>
+                                                        <p className="text-[12.5px] font-bold tracking-wide" style={{ color: C.primary }}>{brandName}</p>
                                                     </div>
                                                 )}
                                             </div>
                                         </div>
 
-                                        <div className="mt-2 flex flex-wrap gap-1.5">
-                                            {gradeVariant && (
-                                                <span className="rounded-full px-2.5 py-1 text-[10.5px] font-bold" style={{ background: `${C.secondary}14`, color: C.secondary }}>
-                                                    {gradeVariant}
-                                                </span>
-                                            )}
-                                        </div>
-
                                         {(manufacturer || modelNo || gradeVariant) && (
-                                            <div className="mt-1 rounded-xl border px-3.5" style={{ borderColor: C.hair }}>
+                                            <div className="mt-3 rounded-xl border px-3.5" style={{ borderColor: C.hair }}>
                                                 <FactRow label="Manufacturer" value={manufacturer} />
                                                 <FactRow label="Model / Part No." value={modelNo} />
                                                 <FactRow label="Grade / Variant" value={gradeVariant} />
@@ -513,21 +505,21 @@ export default function BrandItemDetailModal({ brandItemId, onClose, onViewSelle
                                         )}
                                         {description && (
                                             <div className="mt-4">
-                                                <p className="mb-1.5 text-[11px] font-extrabold uppercase tracking-wide" style={{ color: C.muted }}>Description</p>
-                                                <p className="text-[12.5px] font-medium leading-relaxed" style={{ color: C.ink }}>{description}</p>
+                                                <p className="mb-1.5 text-[11px] font-extrabold uppercase tracking-wider" style={{ color: C.muted }}>Description</p>
+                                                <p className="text-[12.5px] font-medium leading-relaxed tracking-wide" style={{ color: C.ink }}>{description}</p>
                                             </div>
                                         )}
 
                                         {manufacturingDetails && (
                                             <div className="mt-4">
-                                                <p className="mb-1.5 text-[11px] font-extrabold uppercase tracking-wide" style={{ color: C.muted }}>Manufacturing</p>
-                                                <p className="text-[12.5px] font-medium leading-relaxed" style={{ color: C.ink }}>{manufacturingDetails}</p>
+                                                <p className="mb-1.5 text-[11px] font-extrabold uppercase tracking-wider" style={{ color: C.muted }}>Manufacturing</p>
+                                                <p className="text-[12.5px] font-medium leading-relaxed tracking-wide" style={{ color: C.ink }}>{manufacturingDetails}</p>
                                             </div>
                                         )}
 
                                         {specifications.length > 0 && (
                                             <div className="mt-4">
-                                                <p className="mb-1.5 text-[11px] font-extrabold uppercase tracking-wide" style={{ color: C.muted }}>Specifications</p>
+                                                <p className="mb-1.5 text-[11px] font-extrabold uppercase tracking-wider" style={{ color: C.muted }}>Specifications</p>
                                                 <div className="overflow-hidden rounded-xl border" style={{ borderColor: C.hair }}>
                                                     {specifications.map((s, i) => (
                                                         <div
@@ -535,8 +527,8 @@ export default function BrandItemDetailModal({ brandItemId, onClose, onViewSelle
                                                             className="flex justify-between px-3.5 py-2 text-[12px] font-semibold"
                                                             style={{ background: i % 2 === 0 ? "white" : C.hairSoft, color: C.ink }}
                                                         >
-                                                            <span style={{ color: C.muted }}>{s.key}</span>
-                                                            <span className="text-right">{s.value}</span>
+                                                            <span className="tracking-wide" style={{ color: C.muted }}>{s.key}</span>
+                                                            <span className="text-right tracking-wide">{s.value}</span>
                                                         </div>
                                                     ))}
                                                 </div>
@@ -544,7 +536,7 @@ export default function BrandItemDetailModal({ brandItemId, onClose, onViewSelle
                                         )}
 
                                         <div className="mt-4 rounded-xl border p-3.5" style={{ borderColor: C.hair }}>
-                                            <div className="flex items-center justify-between">
+                                            <div className="flex items-center justify-between tracking-wide">
                                                 <div>
                                                     <p className="text-[11px] font-semibold" style={{ color: C.muted }}>Price range</p>
                                                     <p className="text-[16px] font-extrabold" style={{ color: C.ink }}>
@@ -555,11 +547,11 @@ export default function BrandItemDetailModal({ brandItemId, onClose, onViewSelle
                                                                 : `₹${inr(lowestPrice)} – ₹${inr(highestPrice)}`
                                                         ) : "Ask sellers"}
                                                         {lowestPrice != null && (
-                                                            <span className="ml-1 text-[11px] font-bold" style={{ color: C.muted }}>/{priceSuffix}</span>
+                                                            <span className="ml-1 text-[11px] font-bold tracking-wider" style={{ color: C.muted }}>/{priceSuffix}</span>
                                                         )}
                                                     </p>
                                                     {lowestPrice != null && (
-                                                        <p className="mt-0.5 text-[10px] font-semibold" style={{ color: C.muted }}>
+                                                        <p className="mt-0.5 text-[10px] font-semibold tracking-wider" style={{ color: C.muted }}>
                                                             GST-inclusive, as listed by each seller
                                                         </p>
                                                     )}
@@ -570,7 +562,7 @@ export default function BrandItemDetailModal({ brandItemId, onClose, onViewSelle
                                                 </div>
                                             </div>
                                             {packaging && (
-                                                <p className="mt-2.5 border-t pt-2.5 text-[11.5px] font-semibold" style={{ borderColor: C.hairSoft, color: C.secondary }}>
+                                                <p className="mt-2.5 border-t pt-2.5 text-[11.5px] font-semibold tracking-wide" style={{ borderColor: C.hairSoft, color: C.secondary }}>
                                                     {packaging}
                                                 </p>
                                             )}
@@ -579,23 +571,37 @@ export default function BrandItemDetailModal({ brandItemId, onClose, onViewSelle
 
                                     {/* "More below" affordance — only shown while there's genuinely
                                         unscrolled content, measured off the real DOM, not a guess. */}
+                                    {/* "More below" affordance — only shown while there's genuinely
+    unscrolled content, measured off the real DOM, not a guess. */}
                                     <AnimatePresence>
                                         {hasOverflow && !atBottom && (
                                             <motion.div
                                                 initial={{ opacity: 0 }}
                                                 animate={{ opacity: 1 }}
                                                 exit={{ opacity: 0 }}
-                                                className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col items-center"
+                                                className="pointer-events-none absolute inset-x-0 bottom-0 z-10"
                                             >
-                                                <div className="h-14 w-full bg-gradient-to-t from-white via-white/85 to-transparent" />
-                                                <motion.div
-                                                    animate={{ y: [0, -3, 0] }}
-                                                    transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
-                                                    className="mb-2 flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold text-white"
-                                                    style={{ background: "rgba(11,17,22,0.82)" }}
-                                                >
-                                                    Scroll for more <ChevronDown className="h-3 w-3" />
-                                                </motion.div>
+                                                {/* Blur/fade layer behind the label */}
+                                                <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-white via-white/85 to-transparent" />
+
+                                                {/* Scroll label sits ABOVE the gradient */}
+                                                <div className="relative flex justify-center pb-2">
+                                                    <motion.div
+                                                        animate={{ y: [0, -3, 0] }}
+                                                        transition={{
+                                                            duration: 1.4,
+                                                            repeat: Infinity,
+                                                            ease: "easeInOut",
+                                                        }}
+                                                        className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold text-white shadow-sm"
+                                                        style={{
+                                                            background: "rgba(11,17,22,0.82)",
+                                                        }}
+                                                    >
+                                                        Scroll for more
+                                                        <ChevronDown className="h-3 w-3" />
+                                                    </motion.div>
+                                                </div>
                                             </motion.div>
                                         )}
                                     </AnimatePresence>
@@ -607,8 +613,8 @@ export default function BrandItemDetailModal({ brandItemId, onClose, onViewSelle
                                     <button
                                         onClick={() => onViewSellers(item)}
                                         disabled={!sellerCount}
-                                        className="flex w-full items-center justify-center gap-1.5 rounded-xl py-3 text-[13.5px] font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-40"
-                                        style={{ background: C.secondary }}
+                                        className="flex w-full items-center tracking-wide justify-center gap-1.5 rounded-xl py-3 text-[13.5px] font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-40"
+                                        style={{ background: "#000" }}
                                     >
                                         {sellerCount ? `View ${sellerCount} sellers` : "No sellers yet"}
                                         {!!sellerCount && <ArrowRight className="h-3.5 w-3.5" />}

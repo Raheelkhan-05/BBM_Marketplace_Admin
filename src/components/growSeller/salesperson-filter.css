@@ -1,0 +1,195 @@
+/* Salesperson assignment filter — scoped to GrowCustomersPage to avoid changing shared form controls. */
+.sp-filter {
+    --spf-ink: var(--ink, #102A33);
+    --spf-muted: var(--mute, #63777D);
+    --spf-line: var(--line, #DCE6E9);
+    --spf-surface: var(--s, #FFFFFF);
+    --spf-soft: var(--s2, #F2F6F7);
+    --spf-accent: var(--or, #F4511E);
+
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px 18px;
+    width: fit-content;
+    max-width: 100%;
+    margin-top: 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--spf-line);
+    border-radius: 18px;
+    background: linear-gradient(135deg, var(--spf-surface) 20%, color-mix(in srgb, var(--spf-soft) 64%, var(--spf-surface)) 100%);
+    box-shadow: 0 8px 24px -22px rgba(8, 34, 43, .6);
+    color: var(--spf-ink);
+    transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+
+.sp-filter--active {
+    border-color: color-mix(in srgb, var(--spf-accent) 38%, var(--spf-line));
+    box-shadow: 0 8px 24px -20px color-mix(in srgb, var(--spf-accent) 50%, transparent);
+}
+
+.sp-filter__intro {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 195px;
+}
+
+.sp-filter__icon {
+    display: grid;
+    place-items: center;
+    flex: 0 0 38px;
+    width: 38px;
+    height: 38px;
+    border: 1px solid color-mix(in srgb, var(--spf-accent) 18%, var(--spf-line));
+    border-radius: 13px;
+    background: color-mix(in srgb, var(--spf-accent) 10%, var(--spf-surface));
+    color: var(--spf-accent);
+}
+
+.sp-filter__copy {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.sp-filter__label {
+    color: var(--spf-ink);
+    font-size: .9rem;
+    font-weight: 800;
+    line-height: 1.15;
+    letter-spacing: -.01em;
+    cursor: pointer;
+}
+
+.sp-filter__hint {
+    color: var(--spf-muted);
+    font-size: .76rem;
+    font-weight: 500;
+    letter-spacing: 0.2px;
+    line-height: 1.35;
+}
+
+.sp-filter__control {
+    position: relative;
+    flex: 0 1 270px;
+    width: 270px;
+    max-width: 100%;
+    min-width: 0;
+}
+
+.sp-filter__select {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    min-height: 46px;
+    padding: 0 42px 0 14px;
+    appearance: none;
+    -webkit-appearance: none;
+    border: 1px solid color-mix(in srgb, var(--spf-line) 82%, var(--spf-ink));
+    border-radius: 12px;
+    background-color: var(--spf-surface);
+    color: var(--spf-ink);
+    font: 700 .9rem/1.2 var(--f, "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif);
+    letter-spacing: 0;
+    cursor: pointer;
+    outline: none;
+    box-shadow: 0 1px 2px rgba(8, 34, 43, .035);
+    transition: border-color .18s ease, box-shadow .18s ease, background-color .18s ease;
+}
+
+.sp-filter__select:hover {
+    border-color: color-mix(in srgb, var(--spf-accent) 45%, var(--spf-line));
+    background-color: var(--spf-surface);
+}
+
+.sp-filter__select:focus-visible {
+    border-color: var(--spf-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--spf-accent) 18%, transparent);
+}
+
+.sp-filter__select option {
+    color: var(--spf-ink);
+    background: var(--spf-surface);
+}
+
+.sp-filter__chevron {
+    position: absolute;
+    top: 50%;
+    right: 13px;
+    color: var(--spf-muted);
+    pointer-events: none;
+    transform: translateY(-50%);
+    transition: color .18s ease;
+}
+
+.sp-filter__control:focus-within .sp-filter__chevron {
+    color: var(--spf-accent);
+}
+
+.sp-filter__clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    min-height: 36px;
+    padding: 0 10px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--spf-muted);
+    font: 700 .8rem/1 var(--f, "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif);
+    cursor: pointer;
+    transition: color .18s ease, background-color .18s ease, border-color .18s ease;
+}
+
+.sp-filter__clear:hover {
+    border-color: var(--spf-line);
+    background: var(--spf-surface);
+    color: var(--spf-ink);
+}
+
+.sp-filter__clear:focus-visible {
+    outline: 2px solid var(--spf-accent);
+    outline-offset: 2px;
+}
+
+@media (max-width: 560px) {
+    .sp-filter {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        padding: 12px;
+        border-radius: 16px;
+    }
+
+    .sp-filter__intro {
+        grid-column: 1 / -1;
+        min-width: 0;
+    }
+
+    .sp-filter__control {
+        grid-column: 1 / -1;
+        width: 100%;
+        flex: initial;
+    }
+
+    .sp-filter__clear {
+        grid-column: 2;
+        grid-row: 3;
+        justify-self: end;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .sp-filter,
+    .sp-filter__select,
+    .sp-filter__chevron,
+    .sp-filter__clear {
+        transition: none;
+    }
+}
