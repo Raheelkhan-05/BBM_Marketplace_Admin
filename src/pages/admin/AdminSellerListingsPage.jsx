@@ -103,7 +103,7 @@ export default function AdminSellerListingsPage() {
                 {/* <button onClick={() => navigate(-1)} className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border sm:mt-0" style={{ borderColor: C.hair, color: C.ink }} aria-label="Back"><ArrowLeft className="h-4 w-4" /></button> */}
                 <div className="min-w-0">
                     <h1 className="text-[clamp(1.25rem,2.5vw,1.75rem)] font-extrabold tracking-tight" style={{ color: C.ink }}>Seller listings</h1>
-                    <p className="mt-1 max-w-2xl text-[12px] font-medium leading-relaxed sm:text-[13px]" style={{ color: C.muted }}>Add or manage products on behalf of any business using its GSTIN. Everything you add is approved automatically.</p>
+                    <p className="mt-1 max-w-2xl text-[13px] font-medium tracking-wide leading-relaxed sm:text-[14px]" style={{ color: C.muted }}>Add or manage products on behalf of any business using its GSTIN. Everything you add is approved automatically.</p>
                 </div>
             </div>
 
