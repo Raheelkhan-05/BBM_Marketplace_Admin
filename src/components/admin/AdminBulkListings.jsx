@@ -2,15 +2,17 @@
 // Unfinished products are saved server-side per GSTIN (admin_listing_drafts).
 //   live seller   -> "Confirm" creates the listing at once (auto-approved)
 //   not live yet  -> "Confirm" stages it; it publishes when the business finishes seller setup
+// Admin extra: "Add photos to many" gives the same photos to any selection of unfinished products.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createSellerSubmission, createListingForExistingBrand } from "../../utils/api.js";
 import { fetchListingPolicyOptions, fetchGeoCountries, fetchGeoStates, findBrandItemMatch, fetchAllMySubmissions } from "../../utils/sellerListingApi.js";
-import { fetchDrafts, saveDrafts, patchDraft, deleteDraft, clearDrafts, stageListing, fetchStaged } from "../../utils/api.adminListings.js";
+import { fetchDrafts, saveDrafts, patchDraft, deleteDraft, clearDrafts, stageListing, fetchStaged, bulkImages } from "../../utils/api.adminListings.js";
 import { parseRows, validateData, quickIssues, itemKey, productKey, applyMatch, packagingDiffers, MAX_ROWS } from "../../utils/bulkSchema.js";
 import { downloadTemplate, readProductSheet } from "../../utils/bulkExcel.js";
 import { buildPayload } from "../../utils/bulkSubmit.js";
 import BulkItemForm from "../grow/BulkItemForm.jsx";
 import GrowCheckSkeleton from "../grow/GrowCheckSkeleton.jsx";
+import DraftPhotoPanel from "./DraftPhotoPanel.jsx";
 import { useDrop, useDropGuard } from "../grow/growUi.js";
 import "../grow/grow-start.css";
 import "../grow/grow-extras.css";
@@ -47,6 +49,7 @@ export default function AdminBulkListings({ token, sellerToken, live, gstin, say
     const [policy, setPolicy] = useState(null);
     const [listedKeys, setListedKeys] = useState(() => new Set());
     const [loadError, setLoadError] = useState(null);
+    const [photoPanel, setPhotoPanel] = useState(false);
     const root = useRef(null);
     const scrollTop = () => root.current?.scrollIntoView({ block: "start" });
     useEffect(() => { scrollTop(); }, [view, curId]);
@@ -130,6 +133,18 @@ export default function AdminBulkListings({ token, sellerToken, live, gstin, say
         return () => { document.removeEventListener("visibilitychange", hide); window.removeEventListener("pagehide", gone); flush(); };
     }, [flush]);
 
+    /* ---------- same photos on many unfinished products ---------- */
+    const applyDraftPhotos = async (ids, images, mode, onProgress) => {
+        await flush(); // make sure no pending edit is overwritten
+        const r = await bulkImages("drafts", token, gstin, ids, images, mode, onProgress);
+        if (r.items.length) {
+            const m = new Map(r.items.map((x) => [x.id, x.im]));
+            setItems((l) => l.map((i) => (m.has(i.id) ? { ...i, data: { ...i.data, im: m.get(i.id) } } : i)));
+        }
+        if (r.success) say(`Photos ${mode === "replace" ? "replaced" : "added"} on ${plural(r.updated, "product", "products")}${r.skipped ? `, ${r.skipped} skipped` : ""}.`);
+        return r;
+    };
+
     /* ---------- intro ---------- */
     const getTemplate = async () => {
         if (busy) return;
@@ -181,6 +196,7 @@ export default function AdminBulkListings({ token, sellerToken, live, gstin, say
     /* ---------- review ---------- */
     const cur = items.find((i) => i.id === curId) || null;
     const pending = items.filter((i) => i.status === "pending");
+    const noPhoto = pending.filter((i) => !i.data?.im?.length).length;
     const submittedCount = items.filter((i) => i.status === "submitted").length;
     const pos = cur ? items.findIndex((i) => i.id === cur.id) + 1 : 0;
     const dupMsg = useMemo(() => {
@@ -292,6 +308,7 @@ export default function AdminBulkListings({ token, sellerToken, live, gstin, say
                                     <div><b>{plural(items.length, "unfinished product", "unfinished products")}</b><small>Saved from {items[0].file_name || "an earlier upload"}. Pick up where you left off.</small></div>
                                     <div className="bk-ra">
                                         <button className="sbtn sm" type="button" onClick={() => { setCurId(items[0].id); setShowErr(false); setView("review"); }}>Continue</button>
+                                        {pending.length > 1 && <button className="sbtn gh sm" type="button" onClick={() => setPhotoPanel(true)}>Add photos to many</button>}
                                         <button className="lnk" type="button" onClick={discardAll}>Discard all</button>
                                     </div>
                                 </div>
@@ -379,6 +396,17 @@ export default function AdminBulkListings({ token, sellerToken, live, gstin, say
                                         <button className="lnk" type="button" onClick={saveExit}>Save and exit</button>
                                     </div>
                                 </div>
+                                {pending.length > 1 && (
+                                    <div className="bk-resume" style={{ marginBottom: 12 }}>
+                                        <div>
+                                            <b>{noPhoto ? `${plural(noPhoto, "product has", "products have")} no photos yet` : "Photos"}</b>
+                                            <small>Same photos for many products? Select them and add the photos once.</small>
+                                        </div>
+                                        <div className="bk-ra">
+                                            <button className="sbtn sm" type="button" disabled={!!busy} onClick={() => setPhotoPanel(true)}>Add photos to many</button>
+                                        </div>
+                                    </div>
+                                )}
                                 <div className="bk-chips" role="tablist" aria-label="Products in this upload">
                                     {items.map((it, i) => (
                                         <button key={it.id} type="button" className={`${it.status}${it.id === cur.id ? " cur" : ""}${flagged.has(it.id) ? " flag" : ""}`} aria-current={it.id === cur.id}
@@ -425,6 +453,10 @@ export default function AdminBulkListings({ token, sellerToken, live, gstin, say
                     )}
                 </div>
             </div>
+
+            {photoPanel && (
+                <DraftPhotoPanel items={pending} uploadToken={live ? sellerToken : token} onApply={applyDraftPhotos} onClose={() => setPhotoPanel(false)} say={say} />
+            )}
         </div>
     );
 }

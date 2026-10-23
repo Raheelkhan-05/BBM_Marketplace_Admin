@@ -21,11 +21,16 @@
 // (status=unmapped) so admin can find and map them whenever they're free,
 // with no change to how mapping itself works — "Fix mapping" in the view
 // modal already worked on any submission regardless of review_status.
-import { useEffect, useState, useRef } from "react";
+//
+// BULK MAPPING (this pass): search the list, tick many listings (Shift-click
+// for a range, or Select all) and map all their catalog items to one
+// Category > Subcategory > Generic product in a single step.
+import { useEffect, useMemo, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     Loader2, CheckCircle2, X, ImageIcon, Pencil, ChevronDown,
     Package, IndianRupee, Boxes, Truck, FileText, ShieldCheck, Plus, Trash2, AlertTriangle,
+    Layers, Search,
 } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "../../utils/supabaseClient.js";
@@ -45,6 +50,8 @@ import {
 import PolicySelect from "../../components/seller/listingForm/PolicySelect.jsx";
 import DispatchingLocationsPicker from "../../components/seller/listingForm/DispatchingLocationsPicker.jsx";
 import CompleteListingModal from "../../components/admin/CompleteListingModal.jsx";
+import BulkMapModal from "../../components/admin/BulkMapModal.jsx";
+import { Checkbox, SelectAllRow, SelectionBar, BarButton, useSelection } from "../../components/admin/bulkSelect.jsx";
 
 
 const STATUS_TABS = [
@@ -135,6 +142,24 @@ export default function AdminSellerSubmissionsPage() {
     const [highlightId, setHighlightId] = useState(null);
     const itemRefs = useRef(new Map());
     const [completing, setCompleting] = useState(null);
+
+    // NEW — search + bulk selection / mapping
+    const [query, setQuery] = useState("");
+    const [mapping, setMapping] = useState(false);
+    const [notice, setNotice] = useState(null);
+
+    const visible = useMemo(() => {
+        const t = query.trim().toLowerCase();
+        if (!t) return items;
+        return items.filter((it) => [
+            it.product_name, it.brand_name, it.seller?.display_name,
+            it.generic_product?.name, it.generic_product?.subcategory?.name, it.generic_product?.subcategory?.category?.name,
+        ].filter(Boolean).join(" ").toLowerCase().includes(t));
+    }, [items, query]);
+    const visibleIds = useMemo(() => visible.map((i) => i.id), [visible]);
+    const sel = useSelection(visibleIds);
+    const selectedItems = useMemo(() => visible.filter((i) => sel.selected.has(i.id)), [visible, sel.selected]);
+    const unmappedIds = useMemo(() => visible.filter((i) => !i.generic_product).map((i) => i.id), [visible]);
 
     useEffect(() => {
         const id = searchParams.get("highlight");
@@ -236,6 +261,13 @@ export default function AdminSellerSubmissionsPage() {
         setLightbox({ images: gallery });
     }
 
+    function onMapped(r) {
+        setMapping(false);
+        sel.clear();
+        setNotice({ ok: !r.failed, text: r.message });
+        load();
+    }
+
     return (
         <div className="mx-auto min-h-screen max-w-4xl px-4 pb-24 pt-6 sm:px-6" style={{ background: "#FFFFFF" }}>
             <h1 className="text-[20px] font-extrabold sm:text-[22px]" style={{ color: C.ink }}>Product Review Requests</h1>
@@ -251,75 +283,120 @@ export default function AdminSellerSubmissionsPage() {
                 ))}
             </div>
 
-            <div className="mt-5 flex flex-col gap-3">
-                {loading && Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-24 animate-pulse rounded-2xl" style={{ background: C.hairSoft }} />)}
-                {!loading && items.length === 0 && <p className="py-14 text-center text-[13px] font-medium" style={{ color: C.muted }}>Nothing here.</p>}
-                <AnimatePresence initial={false}>
-                    {!loading && items.map((it) => (
-                        <motion.div
-                            key={it.id}
-                            ref={(el) => { if (el) itemRefs.current.set(it.id, el); }}
-                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                            onClick={() => setViewing(it.id)}
-                            role="button" tabIndex={0}
-                            onKeyDown={(e) => { if (e.key === "Enter") setViewing(it.id); }}
-                            className="flex cursor-pointer gap-3.5 rounded-2xl border bg-white p-4 transition-shadow duration-300"
-                            style={{
-                                borderColor: highlightId === it.id ? C.secondary : C.hair,
-                                boxShadow: highlightId === it.id ? `0 0 0 3px ${C.secondary}2e` : undefined,
-                            }}
-                        >
-                            <button onClick={(e) => { e.stopPropagation(); openLightbox(it); }}
-                                className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl" style={{ background: C.hairSoft }}
-                                aria-label="View image">
-                                {it.image ? <img src={it.image} alt="" className="h-full w-full object-cover" /> : <ImageIcon className="m-auto h-6 w-6" style={{ color: C.hair }} />}
-                                {it.images?.length > 1 && (
-                                    <span className="absolute bottom-0.5 right-0.5 rounded-full bg-black/60 px-1 text-[8.5px] font-bold text-white">+{it.images.length - 1}</span>
-                                )}
+            {notice && (
+                <div role="status" className="mt-3 flex items-start gap-2 rounded-xl px-3.5 py-2.5 text-[12.5px] font-semibold"
+                    style={{ background: notice.ok ? "#dcfce7" : "#fef3c7", color: notice.ok ? "#15803d" : "#a16207" }}>
+                    {notice.ok ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />}
+                    <span className="min-w-0 flex-1">{notice.text}</span>
+                    <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss" className="shrink-0"><X className="h-4 w-4" /></button>
+                </div>
+            )}
+
+            <label className="mt-3 flex items-center gap-2 rounded-xl border bg-white px-3 py-2.5" style={{ borderColor: C.hair }}>
+                <Search className="h-4 w-4 shrink-0" style={{ color: C.muted }} />
+                <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by product, brand, seller or category" aria-label="Search listings"
+                    className="w-full text-[13px] font-medium outline-none" style={{ color: C.ink }} />
+                {query && <button type="button" onClick={() => setQuery("")} aria-label="Clear search"><X className="h-4 w-4" style={{ color: C.muted }} /></button>}
+            </label>
+
+            {!loading && visible.length > 0 && (
+                <div className="mt-2 rounded-xl border px-2.5 py-1.5" style={{ borderColor: C.hair }}>
+                    <SelectAllRow accent={C.secondary} checked={sel.isAll} indeterminate={sel.count > 0 && !sel.isAll} count={sel.count} total={visible.length}
+                        noun="listings" onChange={() => (sel.isAll ? sel.clear() : sel.selectAll())}>
+                        {unmappedIds.length > 0 && unmappedIds.length < visible.length && (
+                            <button type="button" onClick={() => sel.setMany(unmappedIds)} className="text-[12px] font-bold underline underline-offset-2" style={{ color: C.secondary }}>
+                                Select only unmapped ({unmappedIds.length})
                             </button>
-                            <div className="min-w-0 flex-1">
-                                <p className="truncate text-[14px] font-bold" style={{ color: C.ink }}>{it.product_name}</p>
-                                <p className="text-[12px] font-semibold" style={{ color: C.muted }}>
-                                    {it.brand_name || "No brand"} · {it.generic_product?.subcategory?.category?.name || "Not mapped"} / {it.generic_product?.subcategory?.name || "—"} / {it.generic_product?.name || "—"}
-                                </p>
-                                <p className="mt-1 text-[12.5px] font-medium" style={{ color: C.ink }}>
-                                    ₹{it.price} · MOQ {it.moq} {it.unit} · {it.stock_type === "made_to_order" ? `Lead time ${it.lead_time}d` : "Ready stock"}
-                                </p>
-                                <p className="text-[11.5px] font-medium" style={{ color: C.muted }}>
-                                    Seller: {it.seller?.display_name || "—"}
-                                    {it.hsn_code && <span> · HSN {it.hsn_code}</span>}
-                                    {it.note_to_admin && <span className="ml-1.5 font-bold" style={{ color: C.secondary }}>· Has a note to admin</span>}
-                                    {it.is_active === false && <span className="ml-1.5 font-bold" style={{ color: "#a16207" }}>· Hidden by seller</span>}
-                                    {/* NEW — surfaces regardless of which tab is active: an already-
-                                        approved (live) item that still has no category mapping. */}
-                                    {it.review_status === "approved" && !it.generic_product && (
-                                        <span className="ml-1.5 font-bold" style={{ color: "#a16207" }}>· Needs category mapping</span>
+                        )}
+                        <span className="text-[11.5px] font-medium" style={{ color: C.muted }}>Hold Shift to select a range.</span>
+                    </SelectAllRow>
+                </div>
+            )}
+
+            <div className="mt-3 flex flex-col gap-3">
+                {loading && Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-24 animate-pulse rounded-2xl" style={{ background: C.hairSoft }} />)}
+                {!loading && visible.length === 0 && <p className="py-14 text-center text-[13px] font-medium" style={{ color: C.muted }}>{items.length ? "No listings match your search." : "Nothing here."}</p>}
+                <AnimatePresence initial={false}>
+                    {!loading && visible.map((it) => {
+                        const isSel = sel.selected.has(it.id);
+                        return (
+                            <motion.div
+                                key={it.id}
+                                ref={(el) => { if (el) itemRefs.current.set(it.id, el); }}
+                                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                                onClick={() => setViewing(it.id)}
+                                role="button" tabIndex={0}
+                                onKeyDown={(e) => { if (e.key === "Enter") setViewing(it.id); }}
+                                className="flex cursor-pointer gap-3 rounded-2xl border bg-white p-4 transition-shadow duration-300"
+                                style={{
+                                    borderColor: highlightId === it.id || isSel ? C.secondary : C.hair,
+                                    background: isSel ? `${C.secondary}08` : "#fff",
+                                    boxShadow: highlightId === it.id ? `0 0 0 3px ${C.secondary}2e` : undefined,
+                                }}
+                            >
+                                <div className="pt-0.5">
+                                    <Checkbox checked={isSel} onChange={(e) => sel.toggle(it.id, e)} accent={C.secondary} label={`Select ${it.product_name || "listing"}`} />
+                                </div>
+                                <button onClick={(e) => { e.stopPropagation(); openLightbox(it); }}
+                                    className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl" style={{ background: C.hairSoft }}
+                                    aria-label="View image">
+                                    {it.image ? <img src={it.image} alt="" className="h-full w-full object-cover" /> : <ImageIcon className="m-auto h-6 w-6" style={{ color: C.hair }} />}
+                                    {it.images?.length > 1 && (
+                                        <span className="absolute bottom-0.5 right-0.5 rounded-full bg-black/60 px-1 text-[8.5px] font-bold text-white">+{it.images.length - 1}</span>
                                     )}
-                                </p>
-                                {it.rejection_reason && <p className="mt-1 text-[11.5px] font-semibold" style={{ color: C.danger }}>Rejected: {it.rejection_reason}</p>}
-                            </div>
-                            <div className="flex shrink-0 flex-col gap-1.5">
-                                <button onClick={(e) => { e.stopPropagation(); setEditing(it.id); }}
-                                    className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-[12px] font-bold" style={{ borderColor: C.hair, color: C.muted }}>
-                                    <Pencil className="h-3.5 w-3.5" /> Edit
                                 </button>
-                                {it.review_status === "pending_review" && (
-                                    <>
-                                        <button onClick={(e) => { e.stopPropagation(); approve(it.id); }} disabled={busyId === it.id}
-                                            className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[12px] font-bold text-white disabled:opacity-50" style={{ background: C.secondary }}>
-                                            {busyId === it.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />} Approve
-                                        </button>
-                                        <button onClick={(e) => { e.stopPropagation(); setRejecting(it.id); setReason(""); }}
-                                            className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-[12px] font-bold" style={{ borderColor: `${C.danger}40`, color: C.danger }}>
-                                            <X className="h-3.5 w-3.5" /> Reject
-                                        </button>
-                                    </>
-                                )}
-                            </div>
-                        </motion.div>
-                    ))}
+                                <div className="min-w-0 flex-1">
+                                    <p className="truncate text-[14px] font-bold" style={{ color: C.ink }}>{it.product_name}</p>
+                                    <p className="text-[12px] font-semibold" style={{ color: C.muted }}>
+                                        {it.brand_name || "No brand"} · {it.generic_product?.subcategory?.category?.name || "Not mapped"} / {it.generic_product?.subcategory?.name || "—"} / {it.generic_product?.name || "—"}
+                                    </p>
+                                    <p className="mt-1 text-[12.5px] font-medium" style={{ color: C.ink }}>
+                                        ₹{it.price} · MOQ {it.moq} {it.unit} · {it.stock_type === "made_to_order" ? `Lead time ${it.lead_time}d` : "Ready stock"}
+                                    </p>
+                                    <p className="text-[11.5px] font-medium" style={{ color: C.muted }}>
+                                        Seller: {it.seller?.display_name || "—"}
+                                        {it.hsn_code && <span> · HSN {it.hsn_code}</span>}
+                                        {it.note_to_admin && <span className="ml-1.5 font-bold" style={{ color: C.secondary }}>· Has a note to admin</span>}
+                                        {it.is_active === false && <span className="ml-1.5 font-bold" style={{ color: "#a16207" }}>· Hidden by seller</span>}
+                                        {/* NEW — surfaces regardless of which tab is active: an already-
+                                            approved (live) item that still has no category mapping. */}
+                                        {it.review_status === "approved" && !it.generic_product && (
+                                            <span className="ml-1.5 font-bold" style={{ color: "#a16207" }}>· Needs category mapping</span>
+                                        )}
+                                    </p>
+                                    {it.rejection_reason && <p className="mt-1 text-[11.5px] font-semibold" style={{ color: C.danger }}>Rejected: {it.rejection_reason}</p>}
+                                </div>
+                                <div className="flex shrink-0 flex-col gap-1.5">
+                                    <button onClick={(e) => { e.stopPropagation(); setEditing(it.id); }}
+                                        className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-[12px] font-bold" style={{ borderColor: C.hair, color: C.muted }}>
+                                        <Pencil className="h-3.5 w-3.5" /> Edit
+                                    </button>
+                                    {it.review_status === "pending_review" && (
+                                        <>
+                                            <button onClick={(e) => { e.stopPropagation(); approve(it.id); }} disabled={busyId === it.id}
+                                                className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[12px] font-bold text-white disabled:opacity-50" style={{ background: C.secondary }}>
+                                                {busyId === it.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />} Approve
+                                            </button>
+                                            <button onClick={(e) => { e.stopPropagation(); setRejecting(it.id); setReason(""); }}
+                                                className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-[12px] font-bold" style={{ borderColor: `${C.danger}40`, color: C.danger }}>
+                                                <X className="h-3.5 w-3.5" /> Reject
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
+                            </motion.div>
+                        );
+                    })}
                 </AnimatePresence>
             </div>
+
+            <SelectionBar count={sel.count} total={visible.length} noun="listings" onSelectAll={sel.selectAll} onClear={sel.clear}>
+                <BarButton icon={Layers} onClick={() => setMapping(true)}>Map category</BarButton>
+            </SelectionBar>
+
+            {mapping && selectedItems.length > 0 && (
+                <BulkMapModal token={token} items={selectedItems} onClose={() => setMapping(false)} onDone={onMapped} />
+            )}
 
             {rejecting && (
                 <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 px-4 sm:items-center" onClick={() => setRejecting(null)}>

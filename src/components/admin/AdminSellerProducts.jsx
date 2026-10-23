@@ -1,19 +1,24 @@
 // Manage every listing of one seller (via the admin "act as seller" token). Same data and actions as GROW "My products".
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, RefreshCw, Pencil, Trash2, Repeat, X } from "lucide-react";
+// Admin extras: select many listings and give them the same photos in one step.
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Search, RefreshCw, Pencil, Trash2, Repeat, X, ImagePlus } from "lucide-react";
 import { C } from "../catalog/tokens";
 import { Chip } from "../orders/disputeUi.jsx";
 import GrowEditListing from "../grow/GrowEditListing.jsx";
+import BulkPhotoModal from "./BulkPhotoModal.jsx";
+import { Checkbox, SelectAllRow, SelectionBar, BarButton, useSelection } from "./bulkSelect.jsx";
 import { setSellerSubmissionActive, refreshSellerSubmission } from "../../utils/api.js";
 import { fetchAllMySubmissions } from "../../utils/sellerListingApi.js";
-import { deleteListing } from "../../utils/api.adminListings.js";
+import { deleteListing, bulkImages } from "../../utils/api.adminListings.js";
 import { getListingExpiry, formatTimeLeft, formatExpiryDate, validityLabel } from "../../shared/listingValidity.js";
 import { saleUnitLabel } from "../../shared/packUnits.js";
 import { resizedImageUrl } from "../../utils/imageUrl.js";
 import { fmtQty, inr, toTitleCase, stockState, packagingLabel, compactSaleUnit, priceRowsFor, renewalHoursFor } from "../growSeller/sellerHelpers.js";
 
-const FILTERS = [["all", "All"], ["live", "Live"], ["paused", "Paused"], ["exp", "Expired"], ["low", "Low stock"], ["rej", "Rejected"]];
+const FILTERS = [["all", "All"], ["live", "Live"], ["paused", "Paused"], ["exp", "Expired"], ["low", "Low stock"], ["nophoto", "No photos"], ["rej", "Rejected"]];
 const GRID = "xl:grid-cols-[minmax(0,2.3fr)_1fr_.8fr_1fr_1.1fr_auto]";
+const hasPhoto = (it) => !!(it.image || it.images?.length);
+const plural = (n, a, b) => `${n} ${n === 1 ? a : b}`;
 
 function classify(it, nowMs) {
     const rejected = it.review_status === "rejected";
@@ -24,7 +29,7 @@ function classify(it, nowMs) {
     return { rejected, pending, exp, expired, active, sState: stockState(it.stock_quantity, it.moq) };
 }
 
-function Row({ it, nowMs, busy, onEdit, onToggle, onRenew, onDelete }) {
+const Row = memo(function Row({ it, nowMs, busy, selected, onSelect, onEdit, onToggle, onRenew, onDelete }) {
     const k = classify(it, nowMs);
     const name = toTitleCase(it.brand?.name || it.product_name || "Product");
     const brand = it.brand?.brand_name || it.brand_name;
@@ -40,8 +45,10 @@ function Row({ it, nowMs, busy, onEdit, onToggle, onRenew, onDelete }) {
     const lab = "mb-0.5 block text-[10.5px] font-bold uppercase tracking-wide xl:hidden";
 
     return (
-        <article className={`grid min-w-0 grid-cols-2 gap-x-3 gap-y-3 rounded-2xl border bg-white p-3.5 xl:items-center xl:rounded-none xl:border-0 xl:border-b xl:px-3 xl:py-2.5 ${GRID}`} style={{ borderColor: C.hairSoft, opacity: busy ? 0.55 : 1 }}>
+        <article className={`grid min-w-0 grid-cols-2 gap-x-3 gap-y-3 rounded-2xl border bg-white p-3.5 xl:items-center xl:rounded-none xl:border-0 xl:border-b xl:px-3 xl:py-2.5 ${GRID}`}
+            style={{ borderColor: selected ? C.primary : C.hairSoft, background: selected ? `${C.primary}0a` : "#fff", opacity: busy ? 0.55 : 1 }}>
             <div className="col-span-2 flex min-w-0 items-center gap-3 xl:col-span-1">
+                <Checkbox checked={selected} onChange={(e) => onSelect(it.id, e)} accent={C.primary} label={`Select ${name}`} />
                 <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl border bg-slate-50" style={{ borderColor: C.hair }}>
                     {img ? <img src={resizedImageUrl(img, { width: 128 })} alt="" loading="lazy" className="h-full w-full object-cover" /> : null}
                 </div>
@@ -71,9 +78,10 @@ function Row({ it, nowMs, busy, onEdit, onToggle, onRenew, onDelete }) {
             </div>
         </article>
     );
-}
+});
 
-export default function AdminSellerProducts({ token, say }) {
+// token = "act as seller" token. adminToken + gstin are used for the bulk photo action.
+export default function AdminSellerProducts({ token, adminToken, gstin, say }) {
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -82,6 +90,7 @@ export default function AdminSellerProducts({ token, say }) {
     const [nowMs, setNowMs] = useState(() => Date.now());
     const [busyId, setBusyId] = useState(null);
     const [editId, setEditId] = useState(null);
+    const [photoOpen, setPhotoOpen] = useState(false);
     const seq = useRef(0);
 
     useEffect(() => { const t = setInterval(() => setNowMs(Date.now()), 60000); return () => clearInterval(t); }, []);
@@ -96,7 +105,7 @@ export default function AdminSellerProducts({ token, say }) {
     }, [token]);
     useEffect(() => { reload(); return () => { seq.current += 1; }; }, [reload]);
 
-    const patch = (id, p) => setItems((l) => l.map((it) => (it.id === id ? { ...it, ...p } : it)));
+    const patch = useCallback((id, p) => setItems((l) => l.map((it) => (it.id === id ? { ...it, ...p } : it))), []);
 
     const stats = useMemo(() => {
         const c = items.map((it) => classify(it, nowMs));
@@ -105,6 +114,7 @@ export default function AdminSellerProducts({ token, say }) {
             paused: c.filter((x) => !x.active && !x.expired && !x.rejected && !x.pending).length,
             exp: c.filter((x) => x.expired).length, rej: c.filter((x) => x.rejected).length,
             low: c.filter((x) => !x.rejected && ["low", "out"].includes(x.sState)).length,
+            nophoto: items.filter((it) => !hasPhoto(it)).length,
         };
     }, [items, nowMs]);
 
@@ -117,27 +127,31 @@ export default function AdminSellerProducts({ token, say }) {
             if (filter === "exp" && !k.expired) return false;
             if (filter === "rej" && !k.rejected) return false;
             if (filter === "low" && (k.rejected || !["low", "out"].includes(k.sState))) return false;
+            if (filter === "nophoto" && hasPhoto(it)) return false;
             if (!term) return true;
             return `${it.brand?.name || it.product_name || ""} ${it.brand?.brand_name || it.brand_name || ""}`.toLowerCase().includes(term);
         });
     }, [items, query, filter, nowMs]);
 
-    const toggle = async (it, active) => {
+    const listIds = useMemo(() => list.map((it) => it.id), [list]);
+    const sel = useSelection(listIds);
+
+    const toggle = useCallback(async (it, active) => {
         setBusyId(it.id); patch(it.id, { is_active: active });
         const res = await setSellerSubmissionActive(token, it.id, active);
         setBusyId(null);
         if (res?.success) { patch(it.id, res.submission); say(active ? "Listing is live." : "Listing paused."); }
         else { patch(it.id, { is_active: it.is_active }); say(res?.message || "Could not update the listing."); }
-    };
-    const renew = async (it) => {
+    }, [token, say, patch]);
+    const renew = useCallback(async (it) => {
         setBusyId(it.id);
         let res = null;
         try { res = await refreshSellerSubmission(token, it.id, renewalHoursFor(it)); } catch { res = null; }
         setBusyId(null);
         if (res?.success && res.submission) { patch(it.id, res.submission); setNowMs(Date.now()); say(`Renewed. Live until ${formatExpiryDate(res.submission.expires_at)}.`); }
         else say(res?.message || "Could not renew the listing.");
-    };
-    const remove = async (it) => {
+    }, [token, say, patch]);
+    const remove = useCallback(async (it) => {
         const name = it.brand?.name || it.product_name || "this product";
         if (!window.confirm(`Delete "${name}" permanently? Buyers will no longer see it. This cannot be undone.`)) return;
         setBusyId(it.id);
@@ -145,6 +159,21 @@ export default function AdminSellerProducts({ token, say }) {
         setBusyId(null);
         if (res?.success) { setItems((l) => l.filter((x) => x.id !== it.id)); say("Listing deleted."); }
         else say(res?.message || "Could not delete the listing.");
+    }, [token, say]);
+
+    // same photos on every selected listing
+    const applyPhotos = async (images, mode, onProgress) => {
+        const ids = [...sel.selected];
+        const r = await bulkImages("live", adminToken, gstin, ids, images, mode, onProgress);
+        if (r.items.length) {
+            const m = new Map(r.items.map((x) => [x.id, x.images]));
+            setItems((l) => l.map((it) => (m.has(it.id) ? { ...it, images: m.get(it.id), image: m.get(it.id)[0] || null } : it)));
+        }
+        if (r.success) {
+            say(`Photos ${mode === "replace" ? "replaced" : "added"} on ${plural(r.updated, "listing", "listings")}${r.skipped ? `, ${r.skipped} skipped` : ""}.`);
+            sel.clear();
+        }
+        return r;
     };
 
     return (
@@ -159,13 +188,22 @@ export default function AdminSellerProducts({ token, say }) {
             </div>
 
             <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
-                {FILTERS.filter(([k]) => k !== "rej" || stats.rej > 0 || filter === "rej").map(([k, l]) => (
+                {FILTERS.filter(([k]) => (k !== "rej" || stats.rej > 0 || filter === "rej") && (k !== "nophoto" || stats.nophoto > 0 || filter === "nophoto")).map(([k, l]) => (
                     <button key={k} onClick={() => setFilter(k)} aria-pressed={filter === k} className="shrink-0 rounded-full border px-3 py-1.5 text-[11.5px] font-bold"
                         style={{ borderColor: filter === k ? C.primary : C.hair, background: filter === k ? C.primary : "#fff", color: filter === k ? "#fff" : C.muted }}>{l} · {stats[k]}</button>
                 ))}
             </div>
 
             {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-[12.5px] font-semibold text-red-700">{error}</p>}
+
+            {list.length > 0 && (
+                <div className="mt-2 rounded-xl border bg-white px-2.5 py-1.5" style={{ borderColor: C.hair }}>
+                    <SelectAllRow accent={C.primary} checked={sel.isAll} indeterminate={sel.count > 0 && !sel.isAll} count={sel.count} total={list.length}
+                        noun="listings shown" onChange={() => (sel.isAll ? sel.clear() : sel.selectAll())}>
+                        <span className="text-[11.5px] font-medium" style={{ color: C.muted }}>Tip: search a product, select all, then add photos once. Hold Shift to pick a range.</span>
+                    </SelectAllRow>
+                </div>
+            )}
 
             <div className="mt-3 overflow-hidden xl:rounded-2xl xl:border xl:bg-white" style={{ borderColor: C.hair }}>
                 <div className={`hidden gap-3 border-b px-3 py-2.5 text-[11.5px] font-bold xl:grid ${GRID}`} style={{ borderColor: C.hair, color: C.muted, background: "#fafbfb" }}>
@@ -178,9 +216,20 @@ export default function AdminSellerProducts({ token, say }) {
                             {items.length ? "No listings match this filter." : "This seller has no listings yet. Use Add product or Bulk upload."}
                         </div>
                     )}
-                    {list.map((it) => <Row key={it.id} it={it} nowMs={nowMs} busy={busyId === it.id} onEdit={setEditId} onToggle={toggle} onRenew={renew} onDelete={remove} />)}
+                    {list.map((it) => (
+                        <Row key={it.id} it={it} nowMs={nowMs} busy={busyId === it.id} selected={sel.selected.has(it.id)} onSelect={sel.toggle}
+                            onEdit={setEditId} onToggle={toggle} onRenew={renew} onDelete={remove} />
+                    ))}
                 </div>
             </div>
+
+            <SelectionBar count={sel.count} total={list.length} noun="listings" onSelectAll={sel.selectAll} onClear={sel.clear}>
+                <BarButton icon={ImagePlus} onClick={() => setPhotoOpen(true)}>Add photos</BarButton>
+            </SelectionBar>
+
+            {photoOpen && sel.count > 0 && (
+                <BulkPhotoModal count={sel.count} noun="listing" uploadToken={token} onApply={applyPhotos} onClose={() => setPhotoOpen(false)} say={say} />
+            )}
 
             {editId && (
                 <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-label="Edit listing">

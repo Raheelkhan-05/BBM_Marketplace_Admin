@@ -1,5 +1,7 @@
+// utils/api.adminListings.js
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api";
 const CHUNK = 25;
+const IMG_CHUNK = 150;
 
 async function call(path, token, { method = "GET", body, keepalive = false } = {}) {
     try {
@@ -44,3 +46,23 @@ export async function saveDrafts(token, { gstin, batchId, fileName, rows }) {
 
 // uses the "act as seller" token
 export const deleteListing = (sellerToken, id) => call(`/seller/catalog/submissions/${id}`, sellerToken, { method: "DELETE" });
+
+// Same photos on many products. kind: "live" (seller listings) | "staged" (waiting list) | "drafts" (unfinished bulk upload).
+// mode: "add" (keep existing, max 5) | "replace". `items` always holds what was saved so far, even if a later batch failed.
+//   live/staged items: { id, images }      drafts items: { id, im }
+export async function bulkImages(kind, adminToken, gstin, ids, images, mode = "add", onProgress) {
+    const path = { live: "/listings/images", staged: "/staged/images", drafts: "/drafts/images" }[kind];
+    const items = [];
+    let updated = 0, skipped = 0;
+    for (let i = 0; i < ids.length; i += IMG_CHUNK) {
+        onProgress?.(i, ids.length);
+        const r = await call(`${B}${path}`, adminToken, { method: "POST", body: { gstin, ids: ids.slice(i, i + IMG_CHUNK), images, mode } });
+        if (!r?.success) {
+            const done = updated ? ` ${updated} product${updated === 1 ? " was" : "s were"} updated before the error.` : "";
+            return { success: false, updated, skipped, items, message: `${r?.message || "Could not apply the photos."}${done}` };
+        }
+        updated += r.updated || 0; skipped += r.skipped || 0;
+        items.push(...(r.items || []));
+    }
+    return { success: true, updated, skipped, items };
+}

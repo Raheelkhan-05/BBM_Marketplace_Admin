@@ -161,7 +161,7 @@ export default function AdminSellerListingsPage() {
                         ))}
                     </div>
 
-                    {tab === "products" && live && sess && <AdminSellerProducts key={sess.token.slice(-12)} token={sess.token} say={say} />}
+                    {tab === "products" && live && sess && <AdminSellerProducts key={sess.token.slice(-12)} token={sess.token} adminToken={token} gstin={target.gstin} say={say} />}
 
                     {tab === "add" && (done ? (
                         <section className="mx-auto mt-6 max-w-md rounded-2xl border bg-white p-6 text-center" style={{ borderColor: C.hair }}>
