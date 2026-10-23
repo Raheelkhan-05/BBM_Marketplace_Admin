@@ -2,23 +2,25 @@
 // Unfinished products are saved server-side per GSTIN (admin_listing_drafts).
 //   live seller   -> "Confirm" creates the listing at once (auto-approved)
 //   not live yet  -> "Confirm" stages it; it publishes when the business finishes seller setup
-// Admin extra: "Add photos to many" gives the same photos to any selection of unfinished products.
+// Admin extra: "Bulk actions" lets the admin select many unfinished products to add photos, remove them, or submit
+// every product that has no problems in one go.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createSellerSubmission, createListingForExistingBrand } from "../../utils/api.js";
 import { fetchListingPolicyOptions, fetchGeoCountries, fetchGeoStates, findBrandItemMatch, fetchAllMySubmissions } from "../../utils/sellerListingApi.js";
-import { fetchDrafts, saveDrafts, patchDraft, deleteDraft, clearDrafts, stageListing, fetchStaged, bulkImages } from "../../utils/api.adminListings.js";
+import { fetchDrafts, saveDrafts, patchDraft, deleteDraft, clearDrafts, stageListing, fetchStaged, bulkImages, bulkDelete } from "../../utils/api.adminListings.js";
 import { parseRows, validateData, quickIssues, itemKey, productKey, applyMatch, packagingDiffers, MAX_ROWS } from "../../utils/bulkSchema.js";
 import { downloadTemplate, readProductSheet } from "../../utils/bulkExcel.js";
 import { buildPayload } from "../../utils/bulkSubmit.js";
 import BulkItemForm from "../grow/BulkItemForm.jsx";
 import GrowCheckSkeleton from "../grow/GrowCheckSkeleton.jsx";
-import DraftPhotoPanel from "./DraftPhotoPanel.jsx";
+import DraftManagerPanel from "./DraftManagerPanel.jsx";
 import { useDrop, useDropGuard } from "../grow/growUi.js";
 import "../grow/grow-start.css";
 import "../grow/grow-extras.css";
 import "../grow/grow-access.css";
 import "../grow/grow-bulk.css";
 
+const SUBMIT_WORKERS = 4;
 const uuid = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0; return (c === "x" ? r : (r & 3) | 8).toString(16);
 }));
@@ -49,8 +51,10 @@ export default function AdminBulkListings({ token, sellerToken, live, gstin, say
     const [policy, setPolicy] = useState(null);
     const [listedKeys, setListedKeys] = useState(() => new Set());
     const [loadError, setLoadError] = useState(null);
-    const [photoPanel, setPhotoPanel] = useState(false);
+    const [manager, setManager] = useState(false);
     const root = useRef(null);
+    const itemsRef = useRef(items);
+    itemsRef.current = items;
     const scrollTop = () => root.current?.scrollIntoView({ block: "start" });
     useEffect(() => { scrollTop(); }, [view, curId]);
 
@@ -133,7 +137,32 @@ export default function AdminBulkListings({ token, sellerToken, live, gstin, say
         return () => { document.removeEventListener("visibilitychange", hide); window.removeEventListener("pagehide", gone); flush(); };
     }, [flush]);
 
-    /* ---------- same photos on many unfinished products ---------- */
+    /* ---------- problems per product (same rules as the single "Confirm" button) ---------- */
+    // Returns Map(id -> [messages]) for every pending product. An empty list means the product is ready to submit.
+    const getIssues = useCallback((list) => {
+        const out = new Map();
+        const seen = new Map(); // name+brand -> index of the first product that has it
+        const nStates = geo.states.length;
+        const dupListed = live
+            ? "This seller already has this product. Change the name or brand, or remove it from this upload."
+            : "This product is already waiting for this GSTIN. Change the name or brand, or remove it.";
+        list.forEach((it, idx) => {
+            const key = itemKey(it.data);
+            if (it.status === "pending") {
+                const msgs = [];
+                if (key) {
+                    if (listedKeys.has(key)) msgs.push(dupListed);
+                    else if (seen.has(key)) msgs.push(`Product ${seen.get(key) + 1} in this upload has the same name and brand. Change the name or brand, or remove this one.`);
+                }
+                validateData(it.data, nStates).forEach((e) => msgs.push(e.msg));
+                out.set(it.id, msgs);
+            }
+            if (key && it.status !== "skipped" && !seen.has(key)) seen.set(key, idx);
+        });
+        return out;
+    }, [geo.states.length, listedKeys, live]);
+
+    /* ---------- bulk actions: photos / remove / submit ---------- */
     const applyDraftPhotos = async (ids, images, mode, onProgress) => {
         await flush(); // make sure no pending edit is overwritten
         const r = await bulkImages("drafts", token, gstin, ids, images, mode, onProgress);
@@ -143,6 +172,91 @@ export default function AdminBulkListings({ token, sellerToken, live, gstin, say
         }
         if (r.success) say(`Photos ${mode === "replace" ? "replaced" : "added"} on ${plural(r.updated, "product", "products")}${r.skipped ? `, ${r.skipped} skipped` : ""}.`);
         return r;
+    };
+
+    const removeMany = async (ids) => {
+        ids.forEach((id) => dirty.current.delete(id));
+        const r = await bulkDelete("drafts", token, gstin, ids);
+        if (r.ids.length) {
+            const gone = new Set(r.ids);
+            setItems((l) => l.filter((i) => !gone.has(i.id)));
+            onChanged?.();
+        }
+        say(r.success ? `Removed ${plural(r.deleted, "product", "products")} from this upload.` : r.message);
+        return r;
+    };
+
+    // Submits many products. Products with any problem are never sent. Unfinished data is kept for anything that fails.
+    const submitMany = async (ids, { onProgress, shouldStop } = {}) => {
+        if (!geo.india) return { success: false, message: "Delivery places are still loading. Try again in a moment." };
+        await flush();
+        const snapshot = itemsRef.current;
+        const issues = getIssues(snapshot);
+        const byId = new Map(snapshot.map((i) => [i.id, i]));
+        const queue = ids.filter((id) => byId.get(id)?.status === "pending");
+        const res = { success: true, total: queue.length, submitted: 0, already: 0, review: 0, invalid: 0, failed: [], stopped: false, expired: false };
+
+        const toDelete = [];
+        const purges = [];
+        const purge = () => {
+            const batch = toDelete.splice(0);
+            if (batch.length) purges.push(bulkDelete("drafts", token, gstin, batch));
+        };
+        const mark = (id, status) => {
+            setItems((l) => l.map((i) => (i.id === id ? { ...i, status } : i)));
+            dirty.current.delete(id);
+            toDelete.push(id);
+            if (toDelete.length >= 10) purge();
+        };
+
+        const one = async (id) => {
+            const it = byId.get(id);
+            const P = it.data;
+            const name = P.n?.trim() || "Product";
+            if (issues.get(id)?.length) { res.invalid += 1; return; }
+            try {
+                const mr = await findBrandItemMatch(live ? sellerToken : token, { productName: P.n.trim(), brandName: P.b.trim(), brandNotApplicable: P.nb });
+                if (!mr?.success) { res.failed.push({ name, msg: "Could not check the catalogue." }); return; }
+                const match = mr.match || null;
+                if (match) {
+                    const applied = applyMatch(P, match);
+                    if (packagingDiffers(P, applied)) { onEdit(id, applied); res.review += 1; return; }
+                }
+                const payload = buildPayload(P, { india: geo.india, seller: null, match });
+                const r = live
+                    ? (payload.genericProductBrandId ? await createListingForExistingBrand(sellerToken, payload) : await createSellerSubmission(sellerToken, payload))
+                    : await stageListing(token, gstin, payload);
+                if (!r?.success) {
+                    if (r?.status === 409 || /already/i.test(r?.message || "")) { mark(id, "skipped"); res.already += 1; return; }
+                    if (r?.status === 401) { res.expired = true; return; }
+                    res.failed.push({ name, msg: r?.message || "Could not add this product." });
+                    return;
+                }
+                mark(id, "submitted");
+                res.submitted += 1;
+            } catch (e) {
+                res.failed.push({ name, msg: e?.message || "Unexpected error." });
+            }
+        };
+
+        let next = 0, done = 0;
+        onProgress?.(0, queue.length);
+        await Promise.all(Array.from({ length: Math.min(SUBMIT_WORKERS, queue.length) }, async () => {
+            while (next < queue.length && !res.expired && !shouldStop?.()) {
+                const id = queue[next++];
+                await one(id);
+                done += 1;
+                onProgress?.(done, queue.length);
+            }
+        }));
+        res.stopped = next < queue.length;
+
+        purge();
+        await Promise.all(purges);
+        await flush(); // keeps any packing/GST updates made along the way
+        if (res.submitted || res.already) onChanged?.();
+        if (res.expired) say("Session expired. Load the seller again.");
+        return res;
     };
 
     /* ---------- intro ---------- */
@@ -217,6 +331,12 @@ export default function AdminBulkListings({ token, sellerToken, live, gstin, say
 
     useEffect(() => { if (view === "review" && !cur) setView(pending.length ? "review" : "done"); }, [view, cur]); // eslint-disable-line
     useEffect(() => { if (view === "review" && !cur && pending.length) setCurId(pending[0].id); }, [view, cur, pending.length]); // eslint-disable-line
+    // the product on screen was just submitted by a bulk action: move on to the next one still waiting
+    useEffect(() => {
+        if (view !== "review" || !cur || cur.status === "pending") return;
+        const n = items.find((i) => i.status === "pending");
+        if (n) { setShowErr(false); setCurId(n.id); } else setView("done");
+    }, [view, cur, items]);
 
     const goTo = async (id) => { await flush(); setShowErr(false); setCurId(id); };
     const skip = async () => {
@@ -308,7 +428,7 @@ export default function AdminBulkListings({ token, sellerToken, live, gstin, say
                                     <div><b>{plural(items.length, "unfinished product", "unfinished products")}</b><small>Saved from {items[0].file_name || "an earlier upload"}. Pick up where you left off.</small></div>
                                     <div className="bk-ra">
                                         <button className="sbtn sm" type="button" onClick={() => { setCurId(items[0].id); setShowErr(false); setView("review"); }}>Continue</button>
-                                        {pending.length > 1 && <button className="sbtn gh sm" type="button" onClick={() => setPhotoPanel(true)}>Add photos to many</button>}
+                                        {pending.length > 1 && <button className="sbtn gh sm" type="button" onClick={() => setManager(true)}>Bulk actions</button>}
                                         <button className="lnk" type="button" onClick={discardAll}>Discard all</button>
                                     </div>
                                 </div>
@@ -399,11 +519,11 @@ export default function AdminBulkListings({ token, sellerToken, live, gstin, say
                                 {pending.length > 1 && (
                                     <div className="bk-resume" style={{ marginBottom: 12 }}>
                                         <div>
-                                            <b>{noPhoto ? `${plural(noPhoto, "product has", "products have")} no photos yet` : "Photos"}</b>
-                                            <small>Same photos for many products? Select them and add the photos once.</small>
+                                            <b>{noPhoto ? `${plural(noPhoto, "product has", "products have")} no photos yet` : "Bulk actions"}</b>
+                                            <small>Add photos to many, remove many, or submit every finished product in one go.</small>
                                         </div>
                                         <div className="bk-ra">
-                                            <button className="sbtn sm" type="button" disabled={!!busy} onClick={() => setPhotoPanel(true)}>Add photos to many</button>
+                                            <button className="sbtn sm" type="button" disabled={!!busy} onClick={() => setManager(true)}>Bulk actions</button>
                                         </div>
                                     </div>
                                 )}
@@ -447,6 +567,7 @@ export default function AdminBulkListings({ token, sellerToken, live, gstin, say
                                 {pending.length ? `, ${pending.length} still waiting. They are saved, so you can finish any time.` : "."}
                             </p>
                             {pending.length > 0 && <button className="sbtn" type="button" onClick={() => { setCurId(pending[0].id); setShowErr(false); setView("review"); }}>Continue with the rest</button>}
+                            {pending.length > 1 && <button className="sbtn gh" type="button" onClick={() => setManager(true)}>Bulk actions</button>}
                             <button className="sbtn" type="button" onClick={() => onExit?.()}>{live ? "Go to products" : "View waiting list"}</button>
                             <button className="sbtn gh" type="button" onClick={() => { setItems((l) => l.filter((i) => i.status === "pending")); setView("intro"); }}>Upload another file</button>
                         </section>
@@ -454,8 +575,9 @@ export default function AdminBulkListings({ token, sellerToken, live, gstin, say
                 </div>
             </div>
 
-            {photoPanel && (
-                <DraftPhotoPanel items={pending} uploadToken={live ? sellerToken : token} onApply={applyDraftPhotos} onClose={() => setPhotoPanel(false)} say={say} />
+            {manager && (
+                <DraftManagerPanel items={items} getIssues={getIssues} live={live} uploadToken={live ? sellerToken : token}
+                    onApplyPhotos={applyDraftPhotos} onRemove={removeMany} onSubmit={submitMany} onClose={() => setManager(false)} say={say} />
             )}
         </div>
     );

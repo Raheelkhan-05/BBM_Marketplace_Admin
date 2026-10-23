@@ -1,12 +1,13 @@
 // Products waiting for a business to finish seller setup (or failed to publish).
-// Admin extras: select many waiting products and give them the same photos in one step.
+// Admin extras: select many waiting products to give them the same photos, or remove them, in one step.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Trash2, RefreshCw, ImagePlus, Search, X } from "lucide-react";
 import { C } from "../catalog/tokens";
 import { Chip } from "../orders/disputeUi.jsx";
 import BulkPhotoModal from "./BulkPhotoModal.jsx";
+import BulkConfirmModal from "./BulkConfirmModal.jsx";
 import { Checkbox, SelectAllRow, SelectionBar, BarButton, useSelection } from "./bulkSelect.jsx";
-import { fetchStaged, deleteStaged, publishStagedNow, bulkImages } from "../../utils/api.adminListings.js";
+import { fetchStaged, deleteStaged, publishStagedNow, bulkImages, bulkDelete } from "../../utils/api.adminListings.js";
 
 const TONE = { staged: ["info", "Waiting"], publishing: ["info", "Publishing…"], published: ["success", "Live"], failed: ["warn", "Failed"], skipped: ["neutral", "Already listed"] };
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: true }) : "—");
@@ -19,6 +20,8 @@ export default function AdminStagedList({ token, gstin, live, say, onChanged }) 
     const [busy, setBusy] = useState(false);
     const [query, setQuery] = useState("");
     const [photoOpen, setPhotoOpen] = useState(false);
+    const [delOpen, setDelOpen] = useState(false);
+    const [delBusy, setDelBusy] = useState(false);
 
     const load = useCallback(async () => {
         const r = await fetchStaged(token, gstin);
@@ -65,6 +68,22 @@ export default function AdminStagedList({ token, gstin, live, say, onChanged }) 
             sel.clear();
         }
         return r;
+    };
+
+    const deleteSelected = async () => {
+        setDelBusy(true);
+        const r = await bulkDelete("staged", token, gstin, [...sel.selected]);
+        setDelBusy(false);
+        if (r.ids.length) {
+            const gone = new Set(r.ids);
+            setItems((l) => l.filter((it) => !gone.has(it.id)));
+            onChanged?.();
+        }
+        if (r.success) {
+            say(`Removed ${plural(r.deleted, "product", "products")} from the waiting list${r.skipped ? `, ${r.skipped} skipped` : ""}.`);
+            sel.clear();
+        } else say(r.message);
+        setDelOpen(false);
     };
 
     if (error) return <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-[12.5px] font-semibold text-red-700">{error}</p>;
@@ -129,10 +148,18 @@ export default function AdminStagedList({ token, gstin, live, say, onChanged }) 
 
             <SelectionBar count={sel.count} total={selectableIds.length} noun="products" onSelectAll={sel.selectAll} onClear={sel.clear}>
                 <BarButton icon={ImagePlus} onClick={() => setPhotoOpen(true)}>Add photos</BarButton>
+                <BarButton icon={Trash2} danger onClick={() => setDelOpen(true)}>Remove</BarButton>
             </SelectionBar>
 
             {photoOpen && sel.count > 0 && (
                 <BulkPhotoModal count={sel.count} noun="product" uploadToken={token} onApply={applyPhotos} onClose={() => setPhotoOpen(false)} say={say} />
+            )}
+
+            {delOpen && sel.count > 0 && (
+                <BulkConfirmModal danger title={`Remove ${plural(sel.count, "product", "products")} from the waiting list?`} confirmLabel={`Remove ${sel.count}`}
+                    busy={delBusy} onConfirm={deleteSelected} onClose={() => setDelOpen(false)}>
+                    <p>{sel.count === 1 ? "It" : "They"} will not go live for this business. This cannot be undone.</p>
+                </BulkConfirmModal>
             )}
         </section>
     );

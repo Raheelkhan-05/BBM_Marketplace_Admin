@@ -100,7 +100,7 @@ export function SelectAllRow({ checked, indeterminate, onChange, count, total, n
 export function SelectionBar({ count, total, noun = "products", onSelectAll, onClear, children }) {
     if (!count) return null;
     return (
-        <div role="region" aria-label="Bulk actions" className="sticky bottom-1 z-30 mt-3 md:bottom-4">
+        <div role="region" aria-label="Bulk actions" className="sticky bottom-20 z-30 mt-3 md:bottom-4">
             <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-slate-900 px-3.5 py-2.5 text-white shadow-xl">
                 <span className="text-[13px] font-bold">{count} selected</span>
                 {count < total && <button type="button" onClick={onSelectAll} className="text-[12px] font-bold underline underline-offset-2">Select all {total}</button>}
@@ -111,10 +111,10 @@ export function SelectionBar({ count, total, noun = "products", onSelectAll, onC
     );
 }
 
-export function BarButton({ onClick, disabled, icon: Icon, children }) {
+export function BarButton({ onClick, disabled, icon: Icon, danger = false, children }) {
     return (
         <button type="button" onClick={onClick} disabled={disabled}
-            className="flex min-h-9 items-center gap-1.5 rounded-lg bg-white px-3.5 text-[12.5px] font-bold text-slate-900 disabled:opacity-50">
+            className={`flex min-h-9 items-center gap-1.5 rounded-lg px-3.5 text-[12.5px] font-bold disabled:opacity-50 ${danger ? "bg-red-600 text-white" : "bg-white text-slate-900"}`}>
             {Icon && <Icon className="h-4 w-4" />}{children}
         </button>
     );

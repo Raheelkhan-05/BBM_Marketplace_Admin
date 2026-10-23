@@ -2,6 +2,7 @@
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api";
 const CHUNK = 25;
 const IMG_CHUNK = 150;
+const DEL_CHUNK = 150;
 
 async function call(path, token, { method = "GET", body, keepalive = false } = {}) {
     try {
@@ -44,7 +45,7 @@ export async function saveDrafts(token, { gstin, batchId, fileName, rows }) {
     return { success: true, items };
 }
 
-// uses the "act as seller" token
+// Kept for compatibility. The admin screens now use bulkDelete("live", ...) so listings are soft-deleted, never erased.
 export const deleteListing = (sellerToken, id) => call(`/seller/catalog/submissions/${id}`, sellerToken, { method: "DELETE" });
 
 // Same photos on many products. kind: "live" (seller listings) | "staged" (waiting list) | "drafts" (unfinished bulk upload).
@@ -65,4 +66,22 @@ export async function bulkImages(kind, adminToken, gstin, ids, images, mode = "a
         items.push(...(r.items || []));
     }
     return { success: true, updated, skipped, items };
+}
+
+// Remove many products. kind: "live" (SOFT delete of seller listings) | "staged" (waiting list) | "drafts" (unfinished upload).
+// `ids` in the result are the ones actually removed, even if a later batch failed.
+export async function bulkDelete(kind, adminToken, gstin, ids, onProgress) {
+    const path = { live: "/listings/delete", staged: "/staged/delete", drafts: "/drafts/delete" }[kind];
+    const gone = [];
+    for (let i = 0; i < ids.length; i += DEL_CHUNK) {
+        onProgress?.(i, ids.length);
+        const r = await call(`${B}${path}`, adminToken, { method: "POST", body: { gstin, ids: ids.slice(i, i + DEL_CHUNK) } });
+        if (!r?.success) {
+            const done = gone.length ? ` ${gone.length} product${gone.length === 1 ? " was" : "s were"} removed before the error.` : "";
+            return { success: false, deleted: gone.length, ids: gone, message: `${r?.message || "Could not remove the products."}${done}` };
+        }
+        gone.push(...(r.ids || []));
+    }
+    onProgress?.(ids.length, ids.length);
+    return { success: true, deleted: gone.length, skipped: ids.length - gone.length, ids: gone };
 }

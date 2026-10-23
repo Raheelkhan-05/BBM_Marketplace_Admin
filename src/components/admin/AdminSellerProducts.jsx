@@ -1,15 +1,16 @@
 // Manage every listing of one seller (via the admin "act as seller" token). Same data and actions as GROW "My products".
-// Admin extras: select many listings and give them the same photos in one step.
+// Admin extras: select many listings to give them the same photos, or remove them (soft delete) in one step.
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search, RefreshCw, Pencil, Trash2, Repeat, X, ImagePlus } from "lucide-react";
 import { C } from "../catalog/tokens";
 import { Chip } from "../orders/disputeUi.jsx";
 import GrowEditListing from "../grow/GrowEditListing.jsx";
 import BulkPhotoModal from "./BulkPhotoModal.jsx";
+import BulkConfirmModal from "./BulkConfirmModal.jsx";
 import { Checkbox, SelectAllRow, SelectionBar, BarButton, useSelection } from "./bulkSelect.jsx";
 import { setSellerSubmissionActive, refreshSellerSubmission } from "../../utils/api.js";
 import { fetchAllMySubmissions } from "../../utils/sellerListingApi.js";
-import { deleteListing, bulkImages } from "../../utils/api.adminListings.js";
+import { bulkImages, bulkDelete } from "../../utils/api.adminListings.js";
 import { getListingExpiry, formatTimeLeft, formatExpiryDate, validityLabel } from "../../shared/listingValidity.js";
 import { saleUnitLabel } from "../../shared/packUnits.js";
 import { resizedImageUrl } from "../../utils/imageUrl.js";
@@ -80,7 +81,7 @@ const Row = memo(function Row({ it, nowMs, busy, selected, onSelect, onEdit, onT
     );
 });
 
-// token = "act as seller" token. adminToken + gstin are used for the bulk photo action.
+// token = "act as seller" token. adminToken + gstin are used for the bulk photo and bulk delete actions.
 export default function AdminSellerProducts({ token, adminToken, gstin, say }) {
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -91,6 +92,9 @@ export default function AdminSellerProducts({ token, adminToken, gstin, say }) {
     const [busyId, setBusyId] = useState(null);
     const [editId, setEditId] = useState(null);
     const [photoOpen, setPhotoOpen] = useState(false);
+    const [delOpen, setDelOpen] = useState(false);
+    const [delBusy, setDelBusy] = useState(false);
+    const [delProg, setDelProg] = useState("");
     const seq = useRef(0);
 
     useEffect(() => { const t = setInterval(() => setNowMs(Date.now()), 60000); return () => clearInterval(t); }, []);
@@ -151,15 +155,17 @@ export default function AdminSellerProducts({ token, adminToken, gstin, say }) {
         if (res?.success && res.submission) { patch(it.id, res.submission); setNowMs(Date.now()); say(`Renewed. Live until ${formatExpiryDate(res.submission.expires_at)}.`); }
         else say(res?.message || "Could not renew the listing.");
     }, [token, say, patch]);
+
+    // Single delete is a soft delete too: the record is kept, buyers and the seller no longer see it.
     const remove = useCallback(async (it) => {
         const name = it.brand?.name || it.product_name || "this product";
-        if (!window.confirm(`Delete "${name}" permanently? Buyers will no longer see it. This cannot be undone.`)) return;
+        if (!window.confirm(`Remove "${name}" from the marketplace? Buyers can no longer see or order it. Past orders are not affected.`)) return;
         setBusyId(it.id);
-        const res = await deleteListing(token, it.id);
+        const r = await bulkDelete("live", adminToken, gstin, [it.id]);
         setBusyId(null);
-        if (res?.success) { setItems((l) => l.filter((x) => x.id !== it.id)); say("Listing deleted."); }
-        else say(res?.message || "Could not delete the listing.");
-    }, [token, say]);
+        if (r.success && r.ids.includes(it.id)) { setItems((l) => l.filter((x) => x.id !== it.id)); say("Listing removed."); }
+        else say(r.message || "Could not remove the listing.");
+    }, [adminToken, gstin, say]);
 
     // same photos on every selected listing
     const applyPhotos = async (images, mode, onProgress) => {
@@ -174,6 +180,24 @@ export default function AdminSellerProducts({ token, adminToken, gstin, say }) {
             sel.clear();
         }
         return r;
+    };
+
+    // remove (soft delete) every selected listing
+    const deleteSelected = async () => {
+        const ids = [...sel.selected];
+        setDelBusy(true); setDelProg("Removing…");
+        const r = await bulkDelete("live", adminToken, gstin, ids, (d, t) => setDelProg(`Removing ${Math.min(d + 1, t)} of ${t}…`));
+        setDelBusy(false); setDelProg("");
+        if (r.ids.length) {
+            const gone = new Set(r.ids);
+            setItems((l) => l.filter((it) => !gone.has(it.id)));
+            if (editId && gone.has(editId)) setEditId(null);
+        }
+        if (r.success) {
+            say(`Removed ${plural(r.deleted, "listing", "listings")} from the marketplace${r.skipped ? `, ${r.skipped} skipped` : ""}.`);
+            sel.clear();
+        } else say(r.message);
+        setDelOpen(false);
     };
 
     return (
@@ -200,7 +224,7 @@ export default function AdminSellerProducts({ token, adminToken, gstin, say }) {
                 <div className="mt-2 rounded-xl border bg-white px-2.5 py-1.5" style={{ borderColor: C.hair }}>
                     <SelectAllRow accent={C.primary} checked={sel.isAll} indeterminate={sel.count > 0 && !sel.isAll} count={sel.count} total={list.length}
                         noun="listings shown" onChange={() => (sel.isAll ? sel.clear() : sel.selectAll())}>
-                        <span className="text-[11.5px] font-medium" style={{ color: C.muted }}>Tip: search a product, select all, then add photos once. Hold Shift to pick a range.</span>
+                        <span className="text-[11.5px] font-medium" style={{ color: C.muted }}>Tip: search a product, select all, then add photos or remove them once. Hold Shift to pick a range.</span>
                     </SelectAllRow>
                 </div>
             )}
@@ -225,10 +249,19 @@ export default function AdminSellerProducts({ token, adminToken, gstin, say }) {
 
             <SelectionBar count={sel.count} total={list.length} noun="listings" onSelectAll={sel.selectAll} onClear={sel.clear}>
                 <BarButton icon={ImagePlus} onClick={() => setPhotoOpen(true)}>Add photos</BarButton>
+                <BarButton icon={Trash2} danger onClick={() => setDelOpen(true)}>Delete</BarButton>
             </SelectionBar>
 
             {photoOpen && sel.count > 0 && (
                 <BulkPhotoModal count={sel.count} noun="listing" uploadToken={token} onApply={applyPhotos} onClose={() => setPhotoOpen(false)} say={say} />
+            )}
+
+            {delOpen && sel.count > 0 && (
+                <BulkConfirmModal danger requireText="DELETE" title={`Delete ${plural(sel.count, "listing", "listings")}?`} confirmLabel={`Delete ${sel.count}`}
+                    busy={delBusy} progress={delProg} onConfirm={deleteSelected} onClose={() => setDelOpen(false)}>
+                    <p>Buyers can no longer see or order {sel.count === 1 ? "this listing" : "these listings"}. {sel.count === 1 ? "It disappears" : "They disappear"} from the seller’s products, the home page and search.</p>
+                    <p>Past orders are not affected. The records are kept, not erased.</p>
+                </BulkConfirmModal>
             )}
 
             {editId && (
