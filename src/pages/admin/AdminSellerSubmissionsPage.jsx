@@ -346,7 +346,7 @@ export default function AdminSellerSubmissionsPage() {
                                     )}
                                 </button>
                                 <div className="min-w-0 flex-1">
-                                    <p className="truncate text-[14px] font-bold" style={{ color: C.ink }}>{it.product_name}</p>
+                                    <p className="text-[14px] font-bold" style={{ color: C.ink }}>{it.product_name}</p>
                                     <p className="text-[12px] font-semibold" style={{ color: C.muted }}>
                                         {it.brand_name || "No brand"} · {it.generic_product?.subcategory?.category?.name || "Not mapped"} / {it.generic_product?.subcategory?.name || "—"} / {it.generic_product?.name || "—"}
                                     </p>
