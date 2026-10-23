@@ -85,3 +85,14 @@ export async function bulkDelete(kind, adminToken, gstin, ids, onProgress) {
     onProgress?.(ids.length, ids.length);
     return { success: true, deleted: gone.length, skipped: ids.length - gone.length, ids: gone };
 }
+
+// Set (or clear, parentId = null) the generic product waiting items will be mapped to when they go live.
+export async function bulkMapStaged(adminToken, gstin, ids, parentId) {
+    const done = [];
+    for (let i = 0; i < ids.length; i += DEL_CHUNK) {
+        const r = await call(`${B}/staged/map`, adminToken, { method: "POST", body: { gstin, ids: ids.slice(i, i + DEL_CHUNK), parentId } });
+        if (!r?.success) return { success: false, updated: done.length, ids: done, message: r?.message || "Could not save the mapping." };
+        done.push(...(r.ids || []));
+    }
+    return { success: true, updated: done.length, skipped: ids.length - done.length, ids: done };
+}

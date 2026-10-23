@@ -1,13 +1,14 @@
 // Products waiting for a business to finish seller setup (or failed to publish).
-// Admin extras: select many waiting products to give them the same photos, or remove them, in one step.
+// Admin extras: select many waiting products to add photos, map them to a generic product, or remove them.
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Trash2, RefreshCw, ImagePlus, Search, X } from "lucide-react";
+import { Loader2, Trash2, RefreshCw, ImagePlus, Search, X, Layers, Unlink } from "lucide-react";
 import { C } from "../catalog/tokens";
 import { Chip } from "../orders/disputeUi.jsx";
 import BulkPhotoModal from "./BulkPhotoModal.jsx";
 import BulkConfirmModal from "./BulkConfirmModal.jsx";
+import StagedMapModal from "./StagedMapModal.jsx";
 import { Checkbox, SelectAllRow, SelectionBar, BarButton, useSelection } from "./bulkSelect.jsx";
-import { fetchStaged, deleteStaged, publishStagedNow, bulkImages, bulkDelete } from "../../utils/api.adminListings.js";
+import { fetchStaged, deleteStaged, publishStagedNow, bulkImages, bulkDelete, bulkMapStaged } from "../../utils/api.adminListings.js";
 
 const TONE = { staged: ["info", "Waiting"], publishing: ["info", "Publishing…"], published: ["success", "Live"], failed: ["warn", "Failed"], skipped: ["neutral", "Already listed"] };
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: true }) : "—");
@@ -20,6 +21,8 @@ export default function AdminStagedList({ token, gstin, live, say, onChanged }) 
     const [busy, setBusy] = useState(false);
     const [query, setQuery] = useState("");
     const [photoOpen, setPhotoOpen] = useState(false);
+    const [mapOpen, setMapOpen] = useState(false);
+    const [mapBusy, setMapBusy] = useState(false);
     const [delOpen, setDelOpen] = useState(false);
     const [delBusy, setDelBusy] = useState(false);
 
@@ -34,13 +37,14 @@ export default function AdminStagedList({ token, gstin, live, say, onChanged }) 
         return () => clearInterval(t);
     }, [items, load]);
 
-    // only products that can still change are selectable
     const shown = useMemo(() => {
         const t = query.trim().toLowerCase();
         return (items || []).filter((i) => !t || `${i.product_name || ""} ${i.brand_name || ""}`.toLowerCase().includes(t));
     }, [items, query]);
     const selectableIds = useMemo(() => shown.filter(editable).map((i) => i.id), [shown]);
     const sel = useSelection(selectableIds);
+    const selItems = useMemo(() => (items || []).filter((i) => sel.selected.has(i.id)), [items, sel.selected]);
+    const selMapped = selItems.filter((i) => i.map_parent_id).length;
 
     const retry = async () => {
         setBusy(true);
@@ -68,6 +72,26 @@ export default function AdminStagedList({ token, gstin, live, say, onChanged }) 
             sel.clear();
         }
         return r;
+    };
+
+    const onMapped = ({ ids, parent, crumb, skipped }) => {
+        const set = new Set(ids);
+        setItems((l) => l.map((it) => (set.has(it.id) ? { ...it, map_parent_id: parent.id, map_parent: parent } : it)));
+        say(`Mapped ${plural(ids.length, "product", "products")} to ${crumb}${skipped ? `, ${skipped} skipped` : ""}.`);
+        setMapOpen(false); sel.clear();
+    };
+
+    const unmapSelected = async () => {
+        const ids = selItems.filter((i) => i.map_parent_id).map((i) => i.id);
+        if (!ids.length || mapBusy) return;
+        setMapBusy(true);
+        const r = await bulkMapStaged(token, gstin, ids, null);
+        setMapBusy(false);
+        if (!r.success) return say(r.message);
+        const set = new Set(r.ids);
+        setItems((l) => l.map((it) => (set.has(it.id) ? { ...it, map_parent_id: null, map_parent: null } : it)));
+        say(`Mapping removed from ${plural(r.updated, "product", "products")}.`);
+        sel.clear();
     };
 
     const deleteSelected = async () => {
@@ -115,7 +139,7 @@ export default function AdminStagedList({ token, gstin, live, say, onChanged }) 
                 <div className="mt-2 rounded-xl border bg-white px-2.5 py-1.5" style={{ borderColor: C.hair }}>
                     <SelectAllRow accent={C.primary} checked={sel.isAll} indeterminate={sel.count > 0 && !sel.isAll} count={sel.count} total={selectableIds.length}
                         noun="products" onChange={() => (sel.isAll ? sel.clear() : sel.selectAll())}>
-                        <span className="text-[11.5px] font-medium" style={{ color: C.muted }}>Hold Shift to select a range.</span>
+                        <span className="text-[11.5px] font-medium" style={{ color: C.muted }}>Select products, then map them to a generic product. Hold Shift to select a range.</span>
                     </SelectAllRow>
                 </div>
             )}
@@ -135,6 +159,11 @@ export default function AdminStagedList({ token, gstin, live, say, onChanged }) 
                             <div className="min-w-0 flex-1">
                                 <p className="truncate text-[13.5px] font-extrabold" style={{ color: C.ink }}>{it.product_name}</p>
                                 <p className="truncate text-[11.5px]" style={{ color: C.muted }}>{it.brand_name || "No brand"} · added {fmt(it.created_at)}</p>
+                                {it.map_parent?.name && (
+                                    <p className="mt-0.5 flex items-center gap-1 truncate text-[11.5px] font-bold" style={{ color: C.secondary }}>
+                                        <Layers className="h-3 w-3 shrink-0" /><span className="truncate">Mapped to {it.map_parent.name}</span>
+                                    </p>
+                                )}
                                 {it.error && <p className="mt-1 text-[11.5px] font-semibold text-red-700">{it.error}</p>}
                             </div>
                             <Chip tone={tone}>{label}</Chip>
@@ -147,9 +176,15 @@ export default function AdminStagedList({ token, gstin, live, say, onChanged }) 
             </div>
 
             <SelectionBar count={sel.count} total={selectableIds.length} noun="products" onSelectAll={sel.selectAll} onClear={sel.clear}>
+                <BarButton icon={Layers} onClick={() => setMapOpen(true)}>Map</BarButton>
+                {selMapped > 0 && <BarButton icon={mapBusy ? Loader2 : Unlink} disabled={mapBusy} onClick={unmapSelected}>Unmap</BarButton>}
                 <BarButton icon={ImagePlus} onClick={() => setPhotoOpen(true)}>Add photos</BarButton>
                 <BarButton icon={Trash2} danger onClick={() => setDelOpen(true)}>Remove</BarButton>
             </SelectionBar>
+
+            {mapOpen && sel.count > 0 && (
+                <StagedMapModal token={token} gstin={gstin} items={selItems} onClose={() => setMapOpen(false)} onDone={onMapped} />
+            )}
 
             {photoOpen && sel.count > 0 && (
                 <BulkPhotoModal count={sel.count} noun="product" uploadToken={token} onApply={applyPhotos} onClose={() => setPhotoOpen(false)} say={say} />
