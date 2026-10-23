@@ -83,22 +83,60 @@ export default function HierarchyCombobox({ label, placeholder, value, onSelect,
         return () => document.removeEventListener("mousedown", onOutside);
     }, []);
 
+
     useLayoutEffect(() => {
         if (!open) return;
+
         function updatePosition() {
             const el = inputWrapRef.current;
             if (!el) return;
+
             const rect = el.getBoundingClientRect();
-            setCoords({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+            const viewportHeight =
+                window.visualViewport?.height ?? window.innerHeight;
+
+            const gap = 4;
+            const edgePadding = 8;
+            const maxDropdownHeight = 256;
+
+            const spaceBelow =
+                viewportHeight - rect.bottom - gap - edgePadding;
+            const spaceAbove = rect.top - gap - edgePadding;
+
+            const showAbove =
+                spaceBelow < Math.min(maxDropdownHeight, 160) &&
+                spaceAbove > spaceBelow;
+
+            const availableSpace = showAbove ? spaceAbove : spaceBelow;
+
+            setCoords({
+                // Anchor to the input, not the dropdown's estimated height.
+                top: showAbove ? rect.top : rect.bottom + gap,
+                left: rect.left,
+                width: rect.width,
+                placement: showAbove ? "above" : "below",
+                maxHeight: Math.max(
+                    0,
+                    Math.min(maxDropdownHeight, availableSpace)
+                ),
+            });
         }
+
         updatePosition();
+
         window.addEventListener("scroll", updatePosition, true);
         window.addEventListener("resize", updatePosition);
+        window.visualViewport?.addEventListener("resize", updatePosition);
+        window.visualViewport?.addEventListener("scroll", updatePosition);
+
         return () => {
             window.removeEventListener("scroll", updatePosition, true);
             window.removeEventListener("resize", updatePosition);
+            window.visualViewport?.removeEventListener("resize", updatePosition);
+            window.visualViewport?.removeEventListener("scroll", updatePosition);
         };
     }, [open]);
+
 
     useEffect(() => {
         if (!open || disabled) return;
@@ -157,12 +195,24 @@ export default function HierarchyCombobox({ label, placeholder, value, onSelect,
             </div>
 
             {open && !disabled && coords && createPortal(
+
                 <div
                     ref={dropdownScrollRef}
                     data-hierarchy-dropdown
-                    className="fixed z-[200] max-h-64 overflow-y-auto rounded-xl border bg-white shadow-lg"
-                    style={{ top: coords.top, left: coords.left, width: coords.width, borderColor: C.hair }}
+                    className="fixed z-[200] overflow-y-auto overscroll-contain rounded-xl border bg-white shadow-lg"
+                    style={{
+                        top: coords.top,
+                        left: coords.left,
+                        width: coords.width,
+                        maxHeight: coords.maxHeight,
+                        transform:
+                            coords.placement === "above"
+                                ? "translateY(calc(-100% - 4px))"
+                                : "none",
+                        borderColor: C.hair,
+                    }}
                 >
+
                     {loading ? (
                         <div className="flex items-center justify-center py-6"><Loader2 className="h-4 w-4 animate-spin" style={{ color: C.muted }} /></div>
                     ) : (
