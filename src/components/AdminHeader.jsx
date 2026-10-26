@@ -12,6 +12,7 @@ import {
     LogOut,
     User,
     ChevronLeft,
+    PictureInPicture2,
     ChevronRight,
     Menu,
     TriangleAlert,
@@ -40,6 +41,12 @@ export const ADMIN_NAV_ITEMS = [
         label: "Catalog",
         icon: BookOpen,
         to: "/catalog",
+    },
+    {
+        id: "group-banners",
+        label: "Banners",
+        icon: PictureInPicture2,
+        to: "/group-banners",
     },
     {
         id: "seller-listings",

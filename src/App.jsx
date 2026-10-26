@@ -25,6 +25,8 @@ import AdminRfqPage from "./pages/admin/AdminRfqPage.jsx";
 import AdminFinancePage from "./pages/admin/AdminFinancePage.jsx";
 import AdminGstinReportsPage from "./pages/admin/AdminGstinReportsPage.jsx";
 import AdminSellerListingsPage from "./pages/admin/AdminSellerListingsPage.jsx";
+import AdminGroupBannersPage from "./pages/admin/AdminGroupBannersPage.jsx";
+
 
 function App() {
   return (
@@ -62,6 +64,7 @@ function App() {
                   <Route path="/rfqs" element={<AdminRfqPage />} />
                   <Route path="/finance" element={<AdminFinancePage />} />
                   <Route path="/seller-listings" element={<AdminSellerListingsPage />} />
+                  <Route path="/group-banners" element={<AdminGroupBannersPage />} />
                 </Route>
               </Route>
             </Routes>
