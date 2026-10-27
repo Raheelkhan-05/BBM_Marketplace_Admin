@@ -535,17 +535,6 @@ export default function AdminSellerSubmissionsPage() {
                     <h1 className="text-[20px] font-extrabold sm:text-[22px]" style={{ color: C.ink }}>Product Review Requests</h1>
                     <p className="text-[12.5px] font-medium" style={{ color: C.muted }}>Approve or reject what sellers have submitted</p>
                 </div>
-                <div className="shrink-0 rounded-xl px-3.5 py-2 text-right" style={{ background: C.hairSoft }} role="status" aria-live="polite">
-                    <p className="text-[10.5px] font-bold uppercase tracking-wide" style={{ color: C.muted }}>
-                        {debouncedQuery ? "Matching" : "Total"} · {tabLabel}
-                    </p>
-                    <p className="text-[20px] font-extrabold leading-tight tabular-nums" style={{ color: C.ink }}>
-                        {loading ? "…" : fmt(total)}
-                    </p>
-                    {!loading && total > 0 && (
-                        <p className="text-[11px] font-semibold tabular-nums" style={{ color: C.muted }}>Showing {fmt(items.length)}</p>
-                    )}
-                </div>
             </div>
 
             <div className="mt-5 flex gap-1.5 overflow-x-auto pb-1">
