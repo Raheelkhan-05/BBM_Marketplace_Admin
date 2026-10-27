@@ -26,8 +26,7 @@
 //  - Stale responses are ignored (request sequence), so quickly switching
 //    tabs / typing never shows results of an older request.
 //  - SELECT ALL covers EVERY matching listing, not just the loaded ones:
-//    "Select all 1,003 listings" (in the sticky select row and in the bottom
-//    bar) asks the server for all matching ids, so no scrolling is needed
+//    The single select-all checkbox (and the bottom bar) asks the server for all matching ids, so no scrolling is needed
 //    before bulk-mapping. The select row is sticky, so it stays reachable
 //    while scrolling. Selection is kept locally (Shift-click range works
 //    over the loaded rows) and is cleared whenever the tab / search changes.
@@ -281,6 +280,7 @@ export default function AdminSellerSubmissionsPage() {
 
     const loadedAllSelected = visible.length > 0 && visible.every((i) => selected.has(i.id));
     const allMatchingSelected = total > 0 && selected.size >= total;
+    const allSelected = allMatchingSelected || (!hasMore && loadedAllSelected);
 
     function selectLoaded() {
         setSelected((prev) => { const next = new Set(prev); visible.forEach((i) => next.add(i.id)); return next; });
@@ -535,7 +535,17 @@ export default function AdminSellerSubmissionsPage() {
                     <h1 className="text-[20px] font-extrabold sm:text-[22px]" style={{ color: C.ink }}>Product Review Requests</h1>
                     <p className="text-[12.5px] font-medium" style={{ color: C.muted }}>Approve or reject what sellers have submitted</p>
                 </div>
-
+                <div className="shrink-0 rounded-xl px-3.5 py-2 text-right" style={{ background: C.hairSoft }} role="status" aria-live="polite">
+                    <p className="text-[10.5px] font-bold uppercase tracking-wide" style={{ color: C.muted }}>
+                        {debouncedQuery ? "Matching" : "Total"} · {tabLabel}
+                    </p>
+                    <p className="text-[20px] font-extrabold leading-tight tabular-nums" style={{ color: C.ink }}>
+                        {loading ? "…" : fmt(total)}
+                    </p>
+                    {!loading && total > 0 && (
+                        <p className="text-[11px] font-semibold tabular-nums" style={{ color: C.muted }}>Showing {fmt(items.length)}</p>
+                    )}
+                </div>
             </div>
 
             <div className="mt-5 flex gap-1.5 overflow-x-auto pb-1">
@@ -567,20 +577,20 @@ export default function AdminSellerSubmissionsPage() {
             {!loading && visible.length > 0 && (
                 <div className="sticky top-0 z-20 -mx-1 mt-2 bg-white px-1 pb-1 pt-1">
                     <div className="rounded-xl border bg-white px-2.5 py-1.5 shadow-sm" style={{ borderColor: C.hair }}>
-                        <SelectAllRow accent={C.secondary} checked={loadedAllSelected || allMatchingSelected} indeterminate={selected.size > 0 && !loadedAllSelected && !allMatchingSelected}
+                        <SelectAllRow accent={C.secondary} checked={allSelected} indeterminate={selected.size > 0 && !allSelected}
                             count={selected.size} total={total} noun="listings"
-                            onChange={() => ((loadedAllSelected || allMatchingSelected) ? clearSelection() : selectLoaded())}>
-                            {!allMatchingSelected && total > visible.length && (
-                                <button type="button" onClick={selectAllMatching} disabled={selectingAll}
-                                    className="inline-flex items-center gap-1 text-[12px] font-bold underline underline-offset-2 disabled:opacity-60" style={{ color: C.secondary }}>
-                                    {selectingAll && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                                    Select all {fmt(total)} listings
-                                </button>
+                            onChange={() => {
+                                if (selectingAll) return;
+                                if (allSelected || selected.size > 0 && !hasMore && loadedAllSelected) clearSelection();
+                                else if (!hasMore) selectLoaded();   // everything is already loaded, no need to ask the server
+                                else selectAllMatching();
+                            }}>
+                            {selectingAll && (
+                                <span className="inline-flex items-center gap-1 text-[12px] font-semibold" style={{ color: C.muted }}>
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Selecting all {fmt(total)}…
+                                </span>
                             )}
-                            {allMatchingSelected && (
-                                <span className="text-[12px] font-bold" style={{ color: C.secondary }}>All {fmt(total)} listings selected</span>
-                            )}
-                            {!allMatchingSelected && unmappedIds.length > 0 && unmappedIds.length < visible.length && (
+                            {!allSelected && unmappedIds.length > 0 && unmappedIds.length < visible.length && (
                                 <button type="button" onClick={() => setSelected(new Set(unmappedIds))} className="text-[12px] font-bold underline underline-offset-2" style={{ color: C.secondary }}>
                                     Select only unmapped ({unmappedIds.length})
                                 </button>
