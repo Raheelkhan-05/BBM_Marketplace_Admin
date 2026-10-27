@@ -660,13 +660,15 @@ export async function adminListSellerSubmissions(token, status = "pending_review
   return res.json();
 }
 
+// NEW — add this one too. Returns EVERY listing matching the tab + search
+// (lightweight shape, capped server-side at 5,000) for "Select all N listings".
+// Returns { success, items, total, truncated }.
 export async function adminListSellerSubmissionIds(token, status = "pending_review", q = "") {
-  const params = new URLSearchParams({ status });
+  const params = new URLSearchParams({ status, matching: "1" });
   if (q) params.set("q", q);
-  const res = await fetch(`${API_BASE}/admin/seller-submissions/matching?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetch(`${API_BASE}/admin/seller-submissions?${params}`, { headers: { Authorization: `Bearer ${token}` } });
   return res.json();
 }
-
 
 export async function adminGetSellerSubmission(token, id) {
   const res = await fetch(`${API_BASE}/admin/seller-submissions/${id}`, { headers: { Authorization: `Bearer ${token}` } });
