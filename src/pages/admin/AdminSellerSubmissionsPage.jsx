@@ -1,32 +1,44 @@
-// pages/admin/AdminSellerSubmissionsPage.jsx — REALIGNED
+// pages/admin/AdminSellerSubmissionsPage.jsx — REALIGNED + INFINITE SCROLL
 //
 // Rebuilt on the same visual language as SellerListingForm (same C tokens,
 // SectionCard, PolicySelect, DispatchingLocationsPicker — reused directly,
 // not re-skinned) and the current seller_product_submissions schema, so
 // every field a seller actually submits (note to admin, dispatch pincode +
 // locations, price basis, GST-inclusive/freight flags, policy keys, etc.)
-// is visible and editable here — none of it was reaching this page before.
+// is visible and editable here.
 //
-// Two bugs fixed:
-//  1. Approve failing silently when the brand item isn't category-mapped
-//     yet — now surfaces the reason and lets you map + approve in one place.
-//  2. The view modal closing on a failed approve, hiding the error.
+// "NEEDS MAPPING" TAB: brand-new products submitted by a seller are
+// fast-approved server-side, so they never show under "Pending". The
+// "Needs mapping" tab (status=unmapped) lets admin find and map them.
 //
-// "NEEDS MAPPING" TAB (this pass): brand-new products submitted by a
-// seller are now fast-approved server-side the instant they're submitted
-// (see sellerCatalogListings.controller.js) — they're live for buyers
-// immediately but still have no category/subcategory/generic-product
-// mapping. Those items are already "approved", so they no longer surface
-// under the "Pending" tab. This adds a dedicated "Needs mapping" tab
-// (status=unmapped) so admin can find and map them whenever they're free,
-// with no change to how mapping itself works — "Fix mapping" in the view
-// modal already worked on any submission regardless of review_status.
+// BULK MAPPING: search the list, tick many listings (Shift-click for a
+// range, or Select all) and map all their catalog items in a single step.
 //
-// BULK MAPPING (this pass): search the list, tick many listings (Shift-click
-// for a range, or Select all) and map all their catalog items to one
-// Category > Subcategory > Generic product in a single step.
-import { useEffect, useMemo, useState, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+// INFINITE SCROLL (this pass):
+//  - The header always shows the REAL total for the current tab + search
+//    (comes from the server, not from how many rows happen to be loaded).
+//  - Only 100 listings are fetched first; the next 100 load automatically
+//    as you scroll near the bottom (IntersectionObserver sentinel).
+//  - Search is now done by the server (debounced), so it covers every
+//    record, not only the ones already loaded.
+//  - Background refreshes (realtime event, tab focus, after approve/map)
+//    are SILENT: no spinner, no scroll jump, the list just updates in place.
+//  - Stale responses are ignored (request sequence), so quickly switching
+//    tabs / typing never shows results of an older request.
+//  - SELECT ALL covers EVERY matching listing, not just the loaded ones:
+//    "Select all 1,003 listings" (in the sticky select row and in the bottom
+//    bar) asks the server for all matching ids, so no scrolling is needed
+//    before bulk-mapping. The select row is sticky, so it stays reachable
+//    while scrolling. Selection is kept locally (Shift-click range works
+//    over the loaded rows) and is cleared whenever the tab / search changes.
+//  - Rows are memoised and use content-visibility, so a few hundred cards
+//    stay smooth; the per-row framer-motion enter/exit animation was
+//    dropped because it was the main source of jank on long lists.
+//
+// FIX: ViewSubmissionModal / EditSubmissionModal treated the object returned
+// by approve() as truthy ("success"), so the modal closed even when approve
+// failed. They now check `.success`.
+import { useCallback, useEffect, useMemo, useState, useRef, memo } from "react";
 import {
     Loader2, CheckCircle2, X, ImageIcon, Pencil, ChevronDown,
     Package, IndianRupee, Boxes, Truck, FileText, ShieldCheck, Plus, Trash2, AlertTriangle,
@@ -36,7 +48,7 @@ import { useSearchParams } from "react-router-dom";
 import { supabase } from "../../utils/supabaseClient.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import {
-    adminListSellerSubmissions, adminApproveSellerSubmission,
+    adminListSellerSubmissions, adminListSellerSubmissionIds, adminApproveSellerSubmission,
     adminRejectSellerSubmission, adminUpdateSellerSubmission, adminGetSellerSubmission,
     adminUpdateCatalogEntry, adminListCatalog, adminCreateCatalogEntry,
 } from "../../utils/api.js";
@@ -51,13 +63,17 @@ import PolicySelect from "../../components/seller/listingForm/PolicySelect.jsx";
 import DispatchingLocationsPicker from "../../components/seller/listingForm/DispatchingLocationsPicker.jsx";
 import CompleteListingModal from "../../components/admin/CompleteListingModal.jsx";
 import BulkMapModal from "../../components/admin/BulkMapModal.jsx";
-import { Checkbox, SelectAllRow, SelectionBar, BarButton, useSelection } from "../../components/admin/bulkSelect.jsx";
+import { Checkbox, SelectAllRow, SelectionBar, BarButton } from "../../components/admin/bulkSelect.jsx";
 
+
+const PAGE_SIZE = 100;          // rows fetched per request
+const REFRESH_MAX = 300;        // a silent refresh re-fetches what's loaded, up to this many
+const fmt = (n) => Number(n || 0).toLocaleString("en-IN");
 
 const STATUS_TABS = [
     { key: "pending_review", label: "Pending" },
     { key: "approved", label: "Approved" },
-    // NEW — approved-but-unmapped items (fast-approved brand-new products
+    // approved-but-unmapped items (fast-approved brand-new products
     // still waiting on a category/subcategory/generic-product mapping).
     { key: "unmapped", label: "Needs mapping" },
     { key: "rejected", label: "Rejected" },
@@ -127,12 +143,93 @@ function dispatchingLocationsSummary(arr) {
     return n === 0 ? `All of ${dl.country.name}` : `${dl.country.name} except ${n} state${n === 1 ? "" : "s"}`;
 }
 
+/* ===================== list row (memoised) ===================== */
+
+const SubmissionRow = memo(function SubmissionRow({
+    it, isSel, isHighlight, busy,
+    registerRef, onToggle, onView, onLightbox, onEdit, onApprove, onReject,
+}) {
+    return (
+        <div
+            ref={(el) => registerRef(it.id, el)}
+            onClick={() => onView(it.id)}
+            role="button" tabIndex={0}
+            onKeyDown={(e) => { if (e.key === "Enter") onView(it.id); }}
+            className="flex cursor-pointer gap-3 rounded-2xl border bg-white p-4 transition-shadow duration-300"
+            style={{
+                borderColor: isHighlight || isSel ? C.secondary : C.hair,
+                background: isSel ? `${C.secondary}08` : "#fff",
+                boxShadow: isHighlight ? `0 0 0 3px ${C.secondary}2e` : undefined,
+                // skip layout/paint work for rows that are off-screen
+                contentVisibility: "auto",
+                containIntrinsicSize: "auto 120px",
+            }}
+        >
+            <div className="pt-0.5">
+                <Checkbox checked={isSel} onChange={(e) => onToggle(it.id, e)} accent={C.secondary} label={`Select ${it.product_name || "listing"}`} />
+            </div>
+            <button onClick={(e) => { e.stopPropagation(); onLightbox(it); }}
+                className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl" style={{ background: C.hairSoft }}
+                aria-label="View image">
+                {it.image ? <img src={it.image} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <ImageIcon className="m-auto h-6 w-6" style={{ color: C.hair }} />}
+                {it.images?.length > 1 && (
+                    <span className="absolute bottom-0.5 right-0.5 rounded-full bg-black/60 px-1 text-[8.5px] font-bold text-white">+{it.images.length - 1}</span>
+                )}
+            </button>
+            <div className="min-w-0 flex-1">
+                <p className="text-[14px] font-bold" style={{ color: C.ink }}>{it.product_name}</p>
+                <p className="text-[12px] font-semibold" style={{ color: C.muted }}>
+                    {it.brand_name || "No brand"} · {it.generic_product?.subcategory?.category?.name || "Not mapped"} / {it.generic_product?.subcategory?.name || "—"} / {it.generic_product?.name || "—"}
+                </p>
+                <p className="mt-1 text-[12.5px] font-medium" style={{ color: C.ink }}>
+                    ₹{it.price} · MOQ {it.moq} {it.unit} · {it.stock_type === "made_to_order" ? `Lead time ${it.lead_time}d` : "Ready stock"}
+                </p>
+                <p className="text-[11.5px] font-medium" style={{ color: C.muted }}>
+                    Seller: {it.seller?.display_name || "—"}
+                    {it.hsn_code && <span> · HSN {it.hsn_code}</span>}
+                    {it.note_to_admin && <span className="ml-1.5 font-bold" style={{ color: C.secondary }}>· Has a note to admin</span>}
+                    {it.is_active === false && <span className="ml-1.5 font-bold" style={{ color: "#a16207" }}>· Hidden by seller</span>}
+                    {/* surfaces regardless of which tab is active: an already-
+                        approved (live) item that still has no category mapping. */}
+                    {it.review_status === "approved" && !it.generic_product && (
+                        <span className="ml-1.5 font-bold" style={{ color: "#a16207" }}>· Needs category mapping</span>
+                    )}
+                </p>
+                {it.rejection_reason && <p className="mt-1 text-[11.5px] font-semibold" style={{ color: C.danger }}>Rejected: {it.rejection_reason}</p>}
+            </div>
+            <div className="flex shrink-0 flex-col gap-1.5">
+                <button onClick={(e) => { e.stopPropagation(); onEdit(it.id); }}
+                    className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-[12px] font-bold" style={{ borderColor: C.hair, color: C.muted }}>
+                    <Pencil className="h-3.5 w-3.5" /> Edit
+                </button>
+                {it.review_status === "pending_review" && (
+                    <>
+                        <button onClick={(e) => { e.stopPropagation(); onApprove(it.id); }} disabled={busy}
+                            className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[12px] font-bold text-white disabled:opacity-50" style={{ background: C.secondary }}>
+                            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />} Approve
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); onReject(it.id); }}
+                            className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-[12px] font-bold" style={{ borderColor: `${C.danger}40`, color: C.danger }}>
+                            <X className="h-3.5 w-3.5" /> Reject
+                        </button>
+                    </>
+                )}
+            </div>
+        </div>
+    );
+});
+
 export default function AdminSellerSubmissionsPage() {
     const { token } = useAuth();
     const [searchParams, setSearchParams] = useSearchParams();
     const [status, setStatus] = useState(() => (searchParams.get("highlight") ? "all" : "pending_review"));
     const [items, setItems] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [total, setTotal] = useState(0);           // real total for current tab + search (from server)
+    const [hasMore, setHasMore] = useState(false);
+    const [loading, setLoading] = useState(true);    // first page / filter change
+    const [loadingMore, setLoadingMore] = useState(false);
+    const [loadError, setLoadError] = useState("");
+    const [loadMoreError, setLoadMoreError] = useState("");
     const [busyId, setBusyId] = useState(null);
     const [rejecting, setRejecting] = useState(null);
     const [reason, setReason] = useState("");
@@ -143,61 +240,204 @@ export default function AdminSellerSubmissionsPage() {
     const itemRefs = useRef(new Map());
     const [completing, setCompleting] = useState(null);
 
-    // NEW — search + bulk selection / mapping
+    // search + bulk selection / mapping
     const [query, setQuery] = useState("");
+    const [debouncedQuery, setDebouncedQuery] = useState("");
     const [mapping, setMapping] = useState(false);
     const [notice, setNotice] = useState(null);
 
-    const visible = useMemo(() => {
-        const t = query.trim().toLowerCase();
-        if (!t) return items;
-        return items.filter((it) => [
-            it.product_name, it.brand_name, it.seller?.display_name,
-            it.generic_product?.name, it.generic_product?.subcategory?.name, it.generic_product?.subcategory?.category?.name,
-        ].filter(Boolean).join(" ").toLowerCase().includes(t));
-    }, [items, query]);
-    const visibleIds = useMemo(() => visible.map((i) => i.id), [visible]);
-    const sel = useSelection(visibleIds);
-    const selectedItems = useMemo(() => visible.filter((i) => sel.selected.has(i.id)), [visible, sel.selected]);
+    // request bookkeeping
+    const reqSeq = useRef(0);               // bumped by every first-page/refresh fetch; stale responses are dropped
+    const offsetRef = useRef(0);            // how many rows the server has already handed us
+    const itemsRef = useRef([]);
+    const hasMoreRef = useRef(false);
+    const loadingMoreRef = useRef(false);
+    const sentinelRef = useRef(null);
+    const lastRefreshRef = useRef(0);
+    const refreshTimerRef = useRef(null);
+    itemsRef.current = items;
+    hasMoreRef.current = hasMore;
+
+    const visible = items; // search is server-side now, so what's loaded is what's shown
     const unmappedIds = useMemo(() => visible.filter((i) => !i.generic_product).map((i) => i.id), [visible]);
+
+    // ---- selection (local, so it can cover rows that aren't loaded yet)
+    const [selected, setSelected] = useState(() => new Set());
+    const [selectingAll, setSelectingAll] = useState(false);
+    const selectedRef = useRef(selected);
+    selectedRef.current = selected;
+    const extraItemsRef = useRef(new Map());   // lightweight items fetched by "select all matching"
+    const lastClickedRef = useRef(null);
+    const visibleIdsRef = useRef([]);
+    visibleIdsRef.current = visible.map((i) => i.id);
+    const filterKeyRef = useRef("");
+    filterKeyRef.current = `${status}|${debouncedQuery}`;
+
+    const clearSelection = useCallback(() => {
+        setSelected(new Set());
+        extraItemsRef.current = new Map();
+        lastClickedRef.current = null;
+    }, []);
+
+    const loadedAllSelected = visible.length > 0 && visible.every((i) => selected.has(i.id));
+    const allMatchingSelected = total > 0 && selected.size >= total;
+
+    function selectLoaded() {
+        setSelected((prev) => { const next = new Set(prev); visible.forEach((i) => next.add(i.id)); return next; });
+    }
+
+    async function selectAllMatching() {
+        if (selectingAll) return;
+        const key = filterKeyRef.current;
+        setSelectingAll(true);
+        let res;
+        try { res = await adminListSellerSubmissionIds(token, status, debouncedQuery); }
+        catch { res = { success: false, message: "Network error. Please try again." }; }
+        setSelectingAll(false);
+        if (key !== filterKeyRef.current) return; // tab / search changed meanwhile
+        if (!res?.success) { setNotice({ ok: false, text: res?.message || "Couldn't select all listings." }); return; }
+        const list = res.items || [];
+        extraItemsRef.current = new Map(list.map((i) => [i.id, i]));
+        setSelected(new Set(list.map((i) => i.id)));
+        if (res.truncated) {
+            setNotice({ ok: false, text: `Selected the first ${fmt(list.length)} of ${fmt(res.total)} listings (per-run limit). Map these, then select the rest.` });
+        }
+    }
+
+    // loaded items win over the lightweight ones from "select all matching"
+    const selectedItems = useMemo(() => {
+        const byId = new Map(items.map((i) => [i.id, i]));
+        const out = [];
+        selected.forEach((id) => { const it = byId.get(id) || extraItemsRef.current.get(id); if (it) out.push(it); });
+        return out;
+    }, [selected, items]);
+
+    // ---- debounce the search box so we don't hit the server on every keystroke
+    useEffect(() => {
+        const t = setTimeout(() => setDebouncedQuery(query.trim()), 350);
+        return () => clearTimeout(t);
+    }, [query]);
+
+    // ---- first page (or silent refresh of what's already loaded)
+    const fetchFirst = useCallback(async ({ silent = false } = {}) => {
+        if (!token) return;
+        const my = ++reqSeq.current;
+        if (!silent) { setLoading(true); setLoadError(""); setLoadMoreError(""); clearSelection(); }
+        const limit = silent ? Math.min(Math.max(itemsRef.current.length, PAGE_SIZE), REFRESH_MAX) : PAGE_SIZE;
+        try {
+            const res = await adminListSellerSubmissions(token, status, debouncedQuery, { limit, offset: 0 });
+            if (my !== reqSeq.current) return; // a newer request superseded this one
+            if (res?.success) {
+                const list = res.items || [];
+                offsetRef.current = list.length;
+                setItems(list);
+                setTotal(res.total ?? list.length);
+                setHasMore(!!res.hasMore);
+                setLoadError("");
+            } else if (!silent) {
+                setLoadError(res?.message || "Couldn't load listings.");
+            }
+        } catch {
+            if (my === reqSeq.current && !silent) setLoadError("Network error. Check your connection and try again.");
+        } finally {
+            if (my === reqSeq.current && !silent) setLoading(false);
+        }
+    }, [token, status, debouncedQuery, clearSelection]);
+
+    // ---- next page (called by the scroll sentinel)
+    const loadMore = useCallback(async () => {
+        if (!token || loadingMoreRef.current || !hasMoreRef.current) return;
+        loadingMoreRef.current = true;
+        setLoadingMore(true);
+        setLoadMoreError("");
+        const my = reqSeq.current;
+        try {
+            const res = await adminListSellerSubmissions(token, status, debouncedQuery, { limit: PAGE_SIZE, offset: offsetRef.current });
+            if (my !== reqSeq.current) return;
+            if (res?.success) {
+                const list = res.items || [];
+                offsetRef.current += list.length;
+                setItems((prev) => {
+                    const seen = new Set(prev.map((i) => i.id));
+                    return [...prev, ...list.filter((i) => !seen.has(i.id))];
+                });
+                setTotal(res.total ?? offsetRef.current);
+                setHasMore(!!res.hasMore && list.length > 0);
+            } else {
+                setLoadMoreError(res?.message || "Couldn't load more listings.");
+            }
+        } catch {
+            if (my === reqSeq.current) setLoadMoreError("Network error while loading more.");
+        } finally {
+            loadingMoreRef.current = false;
+            setLoadingMore(false);
+        }
+    }, [token, status, debouncedQuery]);
+
+    const loadMoreRef = useRef(loadMore);
+    loadMoreRef.current = loadMore;
+    const fetchFirstRef = useRef(fetchFirst);
+    fetchFirstRef.current = fetchFirst;
+
+    // reload whenever the tab, the (debounced) search, or the token changes
+    useEffect(() => { fetchFirst(); }, [fetchFirst]);
+
+    // silent, throttled refresh helpers
+    const refreshSilently = useCallback(() => {
+        clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = setTimeout(() => {
+            lastRefreshRef.current = Date.now();
+            fetchFirstRef.current({ silent: true });
+        }, 500);
+    }, []);
+    useEffect(() => () => clearTimeout(refreshTimerRef.current), []);
+
+    // ---- infinite scroll: load the next page when the sentinel nears the viewport
+    useEffect(() => {
+        const el = sentinelRef.current;
+        if (!el || !hasMore || loading || loadMoreError) return undefined;
+        const io = new IntersectionObserver((entries) => {
+            if (entries[0]?.isIntersecting) loadMoreRef.current();
+        }, { rootMargin: "700px 0px" });
+        io.observe(el);
+        return () => io.disconnect();
+        // items.length: re-observe after each page so a still-visible sentinel keeps loading
+    }, [hasMore, loading, loadMoreError, items.length]);
 
     useEffect(() => {
         const id = searchParams.get("highlight");
         if (id) { setHighlightId(id); setStatus("all"); }
     }, [searchParams]);
 
+    // refresh when the tab regains focus (throttled, silent — no spinner / scroll jump)
     useEffect(() => {
-        function onVisible() { if (document.visibilityState === "visible") load(); }
+        function onVisible() {
+            if (document.visibilityState !== "visible") return;
+            if (Date.now() - lastRefreshRef.current < 5000) return;
+            lastRefreshRef.current = Date.now();
+            fetchFirstRef.current({ silent: true });
+        }
         document.addEventListener("visibilitychange", onVisible);
         window.addEventListener("focus", onVisible);
         return () => {
             document.removeEventListener("visibilitychange", onVisible);
             window.removeEventListener("focus", onVisible);
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [status]);
+    }, []);
 
-    function load() {
-        setLoading(true);
-        adminListSellerSubmissions(token, status).then((res) => {
-            if (res?.success) setItems(res.items);
-            setLoading(false);
-        });
-    }
-    useEffect(() => { if (token) load(); }, [token, status]);
-
+    // realtime: something changed somewhere — update in place
     useEffect(() => {
-        if (!token) return;
+        if (!token) return undefined;
         const channel = supabase
             .channel("admin-submissions")
-            .on("broadcast", { event: "submissions_changed" }, () => load())
+            .on("broadcast", { event: "submissions_changed" }, () => refreshSilently())
             .subscribe();
         return () => { supabase.removeChannel(channel); };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token, status]);
+    }, [token, refreshSilently]);
 
+    // scroll to (and flash) a highlighted row; keeps loading pages until it's found
     useEffect(() => {
-        if (!highlightId) return;
+        if (!highlightId) return undefined;
         let cancelled = false;
         let attempts = 0;
         function tryScroll() {
@@ -214,8 +454,9 @@ export default function AdminSellerSubmissionsPage() {
                 }, 2500);
                 return;
             }
+            if (hasMoreRef.current && !loadingMoreRef.current) loadMoreRef.current();
             attempts += 1;
-            if (attempts < 40) setTimeout(tryScroll, 100);
+            if (attempts < 150) setTimeout(tryScroll, 100);
         }
         tryScroll();
         return () => { cancelled = true; };
@@ -223,17 +464,14 @@ export default function AdminSellerSubmissionsPage() {
     }, [highlightId]);
 
     // Returns the full API result (not just a boolean) so callers can tell
-    // WHY an approve was blocked — usually code: "NOT_MAPPED", meaning the
-    // brand item hasn't been mapped to a category yet. Surfacing that
-    // instead of failing silently was the root of the "approve does
-    // nothing" problem.
-    async function approve(id) {
+    // WHY an approve was blocked.
+    const approve = useCallback(async (id) => {
         setBusyId(id);
         const res = await adminApproveSellerSubmission(token, id);
         setBusyId(null);
-        if (res?.success) { load(); return res; }
+        if (res?.success) { fetchFirstRef.current({ silent: true }); return res; }
         if (res?.code === "NOT_MAPPED") {
-            const it = items.find((i) => i.id === id);
+            const it = itemsRef.current.find((i) => i.id === id);
             setCompleting({
                 id,
                 brandItemId: it?.brand?.id,
@@ -244,34 +482,61 @@ export default function AdminSellerSubmissionsPage() {
         }
         window.alert(res?.message || "Couldn't approve this listing.");
         return res || { success: false };
-    }
+    }, [token]);
 
     async function submitReject() {
         if (!reason.trim()) return;
         setBusyId(rejecting);
         const res = await adminRejectSellerSubmission(token, rejecting, reason.trim());
         setBusyId(null);
-        if (res?.success) { setRejecting(null); setReason(""); load(); }
+        if (res?.success) { setRejecting(null); setReason(""); fetchFirst({ silent: true }); }
         else window.alert(res?.message || "Couldn't reject this listing.");
     }
 
-    function openLightbox(it) {
+    // stable handlers for the memoised rows
+    const registerRef = useCallback((id, el) => { if (el) itemRefs.current.set(id, el); }, []);
+    const onToggle = useCallback((id, e) => {
+        const prev = selectedRef.current;
+        const next = new Set(prev);
+        const turnOn = !prev.has(id);
+        const ids = visibleIdsRef.current;
+        const last = lastClickedRef.current;
+        const a = e?.shiftKey && last && last !== id ? ids.indexOf(last) : -1;
+        const b = a !== -1 ? ids.indexOf(id) : -1;
+        if (a !== -1 && b !== -1) {
+            const [lo, hi] = a < b ? [a, b] : [b, a];
+            for (let i = lo; i <= hi; i++) { if (turnOn) next.add(ids[i]); else next.delete(ids[i]); }
+        } else if (turnOn) next.add(id); else next.delete(id);
+        lastClickedRef.current = id;
+        setSelected(next);
+    }, []);
+    const onView = useCallback((id) => setViewing(id), []);
+    const onEdit = useCallback((id) => setEditing(id), []);
+    const onReject = useCallback((id) => { setRejecting(id); setReason(""); }, []);
+    const onLightbox = useCallback((it) => {
         const gallery = it.images?.length ? it.images : (it.image ? [it.image] : []);
         if (!gallery.length) return;
         setLightbox({ images: gallery });
-    }
+    }, []);
 
     function onMapped(r) {
         setMapping(false);
-        sel.clear();
+        clearSelection();
         setNotice({ ok: !r.failed, text: r.message });
-        load();
+        fetchFirst({ silent: true });
     }
+
+    const tabLabel = STATUS_TABS.find((t) => t.key === status)?.label || "";
 
     return (
         <div className="mx-auto min-h-screen max-w-4xl px-4 pb-24 pt-6 sm:px-6" style={{ background: "#FFFFFF" }}>
-            <h1 className="text-[20px] font-extrabold sm:text-[22px]" style={{ color: C.ink }}>Product Review Requests</h1>
-            <p className="text-[12.5px] font-medium" style={{ color: C.muted }}>Approve or reject what sellers have submitted</p>
+            <div className="flex flex-wrap items-end justify-between gap-3">
+                <div className="min-w-0">
+                    <h1 className="text-[20px] font-extrabold sm:text-[22px]" style={{ color: C.ink }}>Product Review Requests</h1>
+                    <p className="text-[12.5px] font-medium" style={{ color: C.muted }}>Approve or reject what sellers have submitted</p>
+                </div>
+
+            </div>
 
             <div className="mt-5 flex gap-1.5 overflow-x-auto pb-1">
                 {STATUS_TABS.map((t) => (
@@ -296,101 +561,92 @@ export default function AdminSellerSubmissionsPage() {
                 <Search className="h-4 w-4 shrink-0" style={{ color: C.muted }} />
                 <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by product, brand, seller or category" aria-label="Search listings"
                     className="w-full text-[13px] font-medium outline-none" style={{ color: C.ink }} />
-                {query && <button type="button" onClick={() => setQuery("")} aria-label="Clear search"><X className="h-4 w-4" style={{ color: C.muted }} /></button>}
+                {query && <button type="button" onClick={() => { setQuery(""); setDebouncedQuery(""); }} aria-label="Clear search"><X className="h-4 w-4" style={{ color: C.muted }} /></button>}
             </label>
 
             {!loading && visible.length > 0 && (
-                <div className="mt-2 rounded-xl border px-2.5 py-1.5" style={{ borderColor: C.hair }}>
-                    <SelectAllRow accent={C.secondary} checked={sel.isAll} indeterminate={sel.count > 0 && !sel.isAll} count={sel.count} total={visible.length}
-                        noun="listings" onChange={() => (sel.isAll ? sel.clear() : sel.selectAll())}>
-                        {unmappedIds.length > 0 && unmappedIds.length < visible.length && (
-                            <button type="button" onClick={() => sel.setMany(unmappedIds)} className="text-[12px] font-bold underline underline-offset-2" style={{ color: C.secondary }}>
-                                Select only unmapped ({unmappedIds.length})
-                            </button>
-                        )}
-                        <span className="text-[11.5px] font-medium" style={{ color: C.muted }}>Hold Shift to select a range.</span>
-                    </SelectAllRow>
+                <div className="sticky top-0 z-20 -mx-1 mt-2 bg-white px-1 pb-1 pt-1">
+                    <div className="rounded-xl border bg-white px-2.5 py-1.5 shadow-sm" style={{ borderColor: C.hair }}>
+                        <SelectAllRow accent={C.secondary} checked={loadedAllSelected || allMatchingSelected} indeterminate={selected.size > 0 && !loadedAllSelected && !allMatchingSelected}
+                            count={selected.size} total={total} noun="listings"
+                            onChange={() => ((loadedAllSelected || allMatchingSelected) ? clearSelection() : selectLoaded())}>
+                            {!allMatchingSelected && total > visible.length && (
+                                <button type="button" onClick={selectAllMatching} disabled={selectingAll}
+                                    className="inline-flex items-center gap-1 text-[12px] font-bold underline underline-offset-2 disabled:opacity-60" style={{ color: C.secondary }}>
+                                    {selectingAll && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                                    Select all {fmt(total)} listings
+                                </button>
+                            )}
+                            {allMatchingSelected && (
+                                <span className="text-[12px] font-bold" style={{ color: C.secondary }}>All {fmt(total)} listings selected</span>
+                            )}
+                            {!allMatchingSelected && unmappedIds.length > 0 && unmappedIds.length < visible.length && (
+                                <button type="button" onClick={() => setSelected(new Set(unmappedIds))} className="text-[12px] font-bold underline underline-offset-2" style={{ color: C.secondary }}>
+                                    Select only unmapped ({unmappedIds.length})
+                                </button>
+                            )}
+                            <span className="text-[11.5px] font-medium" style={{ color: C.muted }}>Hold Shift to select a range.</span>
+                        </SelectAllRow>
+                    </div>
                 </div>
             )}
 
             <div className="mt-3 flex flex-col gap-3">
-                {loading && Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-24 animate-pulse rounded-2xl" style={{ background: C.hairSoft }} />)}
-                {!loading && visible.length === 0 && <p className="py-14 text-center text-[13px] font-medium" style={{ color: C.muted }}>{items.length ? "No listings match your search." : "Nothing here."}</p>}
-                <AnimatePresence initial={false}>
-                    {!loading && visible.map((it) => {
-                        const isSel = sel.selected.has(it.id);
-                        return (
-                            <motion.div
-                                key={it.id}
-                                ref={(el) => { if (el) itemRefs.current.set(it.id, el); }}
-                                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                                onClick={() => setViewing(it.id)}
-                                role="button" tabIndex={0}
-                                onKeyDown={(e) => { if (e.key === "Enter") setViewing(it.id); }}
-                                className="flex cursor-pointer gap-3 rounded-2xl border bg-white p-4 transition-shadow duration-300"
-                                style={{
-                                    borderColor: highlightId === it.id || isSel ? C.secondary : C.hair,
-                                    background: isSel ? `${C.secondary}08` : "#fff",
-                                    boxShadow: highlightId === it.id ? `0 0 0 3px ${C.secondary}2e` : undefined,
-                                }}
-                            >
-                                <div className="pt-0.5">
-                                    <Checkbox checked={isSel} onChange={(e) => sel.toggle(it.id, e)} accent={C.secondary} label={`Select ${it.product_name || "listing"}`} />
-                                </div>
-                                <button onClick={(e) => { e.stopPropagation(); openLightbox(it); }}
-                                    className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl" style={{ background: C.hairSoft }}
-                                    aria-label="View image">
-                                    {it.image ? <img src={it.image} alt="" className="h-full w-full object-cover" /> : <ImageIcon className="m-auto h-6 w-6" style={{ color: C.hair }} />}
-                                    {it.images?.length > 1 && (
-                                        <span className="absolute bottom-0.5 right-0.5 rounded-full bg-black/60 px-1 text-[8.5px] font-bold text-white">+{it.images.length - 1}</span>
-                                    )}
-                                </button>
-                                <div className="min-w-0 flex-1">
-                                    <p className="text-[14px] font-bold" style={{ color: C.ink }}>{it.product_name}</p>
-                                    <p className="text-[12px] font-semibold" style={{ color: C.muted }}>
-                                        {it.brand_name || "No brand"} · {it.generic_product?.subcategory?.category?.name || "Not mapped"} / {it.generic_product?.subcategory?.name || "—"} / {it.generic_product?.name || "—"}
-                                    </p>
-                                    <p className="mt-1 text-[12.5px] font-medium" style={{ color: C.ink }}>
-                                        ₹{it.price} · MOQ {it.moq} {it.unit} · {it.stock_type === "made_to_order" ? `Lead time ${it.lead_time}d` : "Ready stock"}
-                                    </p>
-                                    <p className="text-[11.5px] font-medium" style={{ color: C.muted }}>
-                                        Seller: {it.seller?.display_name || "—"}
-                                        {it.hsn_code && <span> · HSN {it.hsn_code}</span>}
-                                        {it.note_to_admin && <span className="ml-1.5 font-bold" style={{ color: C.secondary }}>· Has a note to admin</span>}
-                                        {it.is_active === false && <span className="ml-1.5 font-bold" style={{ color: "#a16207" }}>· Hidden by seller</span>}
-                                        {/* NEW — surfaces regardless of which tab is active: an already-
-                                            approved (live) item that still has no category mapping. */}
-                                        {it.review_status === "approved" && !it.generic_product && (
-                                            <span className="ml-1.5 font-bold" style={{ color: "#a16207" }}>· Needs category mapping</span>
-                                        )}
-                                    </p>
-                                    {it.rejection_reason && <p className="mt-1 text-[11.5px] font-semibold" style={{ color: C.danger }}>Rejected: {it.rejection_reason}</p>}
-                                </div>
-                                <div className="flex shrink-0 flex-col gap-1.5">
-                                    <button onClick={(e) => { e.stopPropagation(); setEditing(it.id); }}
-                                        className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-[12px] font-bold" style={{ borderColor: C.hair, color: C.muted }}>
-                                        <Pencil className="h-3.5 w-3.5" /> Edit
-                                    </button>
-                                    {it.review_status === "pending_review" && (
-                                        <>
-                                            <button onClick={(e) => { e.stopPropagation(); approve(it.id); }} disabled={busyId === it.id}
-                                                className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-[12px] font-bold text-white disabled:opacity-50" style={{ background: C.secondary }}>
-                                                {busyId === it.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />} Approve
-                                            </button>
-                                            <button onClick={(e) => { e.stopPropagation(); setRejecting(it.id); setReason(""); }}
-                                                className="inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-[12px] font-bold" style={{ borderColor: `${C.danger}40`, color: C.danger }}>
-                                                <X className="h-3.5 w-3.5" /> Reject
-                                            </button>
-                                        </>
-                                    )}
-                                </div>
-                            </motion.div>
-                        );
-                    })}
-                </AnimatePresence>
+                {loading && Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-24 animate-pulse rounded-2xl" style={{ background: C.hairSoft }} />)}
+
+                {!loading && loadError && (
+                    <div className="flex flex-col items-center gap-3 py-14 text-center">
+                        <p className="text-[13px] font-semibold" style={{ color: C.danger }}>{loadError}</p>
+                        <button onClick={() => fetchFirst()} className="rounded-lg border px-4 py-2 text-[12.5px] font-bold" style={{ borderColor: C.hair, color: C.ink }}>Try again</button>
+                    </div>
+                )}
+
+                {!loading && !loadError && visible.length === 0 && (
+                    <p className="py-14 text-center text-[13px] font-medium" style={{ color: C.muted }}>{debouncedQuery ? "No listings match your search." : "Nothing here."}</p>
+                )}
+
+                {!loading && visible.map((it) => (
+                    <SubmissionRow
+                        key={it.id}
+                        it={it}
+                        isSel={selected.has(it.id)}
+                        isHighlight={highlightId === it.id}
+                        busy={busyId === it.id}
+                        registerRef={registerRef}
+                        onToggle={onToggle}
+                        onView={onView}
+                        onLightbox={onLightbox}
+                        onEdit={onEdit}
+                        onApprove={approve}
+                        onReject={onReject}
+                    />
+                ))}
+
+                {/* infinite-scroll footer */}
+                {!loading && visible.length > 0 && (
+                    <div className="flex flex-col items-center gap-2 py-4">
+                        {hasMore && !loadMoreError && <div ref={sentinelRef} className="h-px w-full" aria-hidden="true" />}
+                        {loadingMore && (
+                            <p className="flex items-center gap-2 text-[12px] font-semibold" style={{ color: C.muted }}>
+                                <Loader2 className="h-4 w-4 animate-spin" /> Loading more…
+                            </p>
+                        )}
+                        {loadMoreError && (
+                            <div className="flex flex-col items-center gap-2">
+                                <p className="text-[12px] font-semibold" style={{ color: C.danger }}>{loadMoreError}</p>
+                                <button onClick={() => { setLoadMoreError(""); loadMore(); }} className="rounded-lg border px-4 py-1.5 text-[12px] font-bold" style={{ borderColor: C.hair, color: C.ink }}>Retry</button>
+                            </div>
+                        )}
+                        {!hasMore && !loadingMore && !loadMoreError && (
+                            <p className="text-[11.5px] font-medium tabular-nums" style={{ color: C.muted }}>
+                                {fmt(total)} {total === 1 ? "listing" : "listings"} · you've reached the end
+                            </p>
+                        )}
+                    </div>
+                )}
             </div>
 
-            <SelectionBar count={sel.count} total={visible.length} noun="listings" onSelectAll={sel.selectAll} onClear={sel.clear}>
+            <SelectionBar count={selected.size} total={total} noun="listings" onSelectAll={selectAllMatching} onClear={clearSelection}>
                 <BarButton icon={Layers} onClick={() => setMapping(true)}>Map category</BarButton>
             </SelectionBar>
 
@@ -419,7 +675,7 @@ export default function AdminSellerSubmissionsPage() {
                 <EditSubmissionModal
                     token={token} submissionId={editing}
                     onClose={() => setEditing(null)}
-                    onSaved={() => { setEditing(null); load(); }}
+                    onSaved={() => { setEditing(null); fetchFirst({ silent: true }); }}
                     onApprove={approve}
                 />
             )}
@@ -564,9 +820,9 @@ function ViewSubmissionModal({ token, submissionId, onClose, onEdit, onImageClic
 
     async function handleApprove() {
         setApproving(true);
-        const ok = await onApprove(submissionId);
+        const result = await onApprove(submissionId);
         setApproving(false);
-        if (ok) onClose(); // only close on success — a failed approve should stay visible with its error
+        if (result?.success) onClose(); // only close on success — a failed approve should stay visible with its error
         else reload();
     }
 
@@ -898,9 +1154,9 @@ function EditSubmissionModal({ token, submissionId, onClose, onSaved, onApprove 
         const ok = await persist();
         if (!ok) return;
         setApproving(true);
-        const approved = await onApprove(submissionId);
+        const result = await onApprove(submissionId);
         setApproving(false);
-        if (approved) onSaved();
+        if (result?.success) onSaved();
         else load(); // refresh so the mapping panel / status reflect reality
     }
 

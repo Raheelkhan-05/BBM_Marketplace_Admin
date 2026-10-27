@@ -651,11 +651,22 @@ export async function fetchSellerSubmissionDetail(token, id) {
   return res.json();
 }
 
-export async function adminListSellerSubmissions(token, status = "pending_review", q = "") {
-  const params = new URLSearchParams({ status, ...(q ? { q } : {}) });
+export async function adminListSellerSubmissions(token, status = "pending_review", q = "", { limit, offset } = {}) {
+  const params = new URLSearchParams({ status });
+  if (q) params.set("q", q);
+  if (limit) params.set("limit", String(limit));
+  if (offset) params.set("offset", String(offset));
   const res = await fetch(`${API_BASE}/admin/seller-submissions?${params}`, { headers: { Authorization: `Bearer ${token}` } });
   return res.json();
 }
+
+export async function adminListSellerSubmissionIds(token, status = "pending_review", q = "") {
+  const params = new URLSearchParams({ status });
+  if (q) params.set("q", q);
+  const res = await fetch(`${API_BASE}/admin/seller-submissions/matching?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+  return res.json();
+}
+
 
 export async function adminGetSellerSubmission(token, id) {
   const res = await fetch(`${API_BASE}/admin/seller-submissions/${id}`, { headers: { Authorization: `Bearer ${token}` } });
