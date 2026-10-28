@@ -43,6 +43,12 @@ export const ADMIN_NAV_ITEMS = [
         to: "/catalog",
     },
     {
+        id: "ai-banners",
+        label: "AI Banners",
+        icon: PictureInPicture2,
+        to: "/ai-banners",
+    },
+    {
         id: "group-banners",
         label: "Banners",
         icon: PictureInPicture2,
