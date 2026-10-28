@@ -49,6 +49,12 @@ export const ADMIN_NAV_ITEMS = [
         to: "/group-banners",
     },
     {
+        id: "entity-banners",
+        label: "S C Banners",
+        icon: PictureInPicture2,
+        to: "/entity-banners",
+    },
+    {
         id: "seller-listings",
         label: "Seller Listings",
         icon: ListChecks,
