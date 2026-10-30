@@ -38,7 +38,7 @@ function ShareStoreButton({ seller }) {
     const slug = seller.shop_slug;
     if (!slug) return null;
 
-    const link = `${window.location.origin}/home/?shop=${encodeURIComponent(slug)}`;
+    const link = `${window.location.origin}/sellers/${encodeURIComponent(slug)}`;
 
     const onClick = async () => {
         // Start the copy and the share in the same tick. Some browsers (Safari especially)

@@ -190,7 +190,7 @@ export default function OrderDetailPage() {
                         )}
                     </div>
                     {order.seller.shop_slug && (
-                        <Link to={`/home/?shop=${order.seller.shop_slug}`} onClick={(e) => e.stopPropagation()} className="shrink-0 rounded-lg border px-3 py-1.5 text-[11.5px] font-bold tracking-wider" style={{ borderColor: C.hair, color: C.secondary }}>
+                        <Link to={`/sellers/${order.seller.shop_slug}`} onClick={(e) => e.stopPropagation()} className="shrink-0 rounded-lg border px-3 py-1.5 text-[11.5px] font-bold tracking-wider" style={{ borderColor: C.hair, color: C.secondary }}>
                             View shop
                         </Link>
                     )}

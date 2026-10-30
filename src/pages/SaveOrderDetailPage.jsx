@@ -212,7 +212,7 @@ export default function SaveOrderDetailPage() {
                                 {seller.business?.gstin && <small>GSTIN: {seller.business.gstin}</small>}
                             </div>
                             {seller.shop_slug && (
-                                <Link className="sh-btn sm" to={`/home/?shop=${seller.shop_slug}`}>View shop</Link>
+                                <Link className="sh-btn sm" to={`/sellers/${seller.shop_slug}`}>View shop</Link>
                             )}
                         </section>
                     )}

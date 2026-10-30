@@ -98,7 +98,7 @@ function Chips({ value, onChange, options }) {
 function ShopCard({ seller }) {
     const { say } = useGrowSeller();
     const slug = seller.shop_slug;
-    const link = slug ? `${window.location.origin}/home/?shop=${encodeURIComponent(slug)}` : "";
+    const link = slug ? `${window.location.origin}/sellers/${encodeURIComponent(slug)}` : "";
     const letter = (seller.display_name || "S").trim()[0]?.toUpperCase();
 
     const share = async () => {
