@@ -18,6 +18,7 @@ import {
     TriangleAlert,
     FileText,
     X,
+    Eraser,
 } from "lucide-react";
 
 import { useAuth } from "../context/AuthContext.jsx";
@@ -41,6 +42,12 @@ export const ADMIN_NAV_ITEMS = [
         label: "Catalog",
         icon: BookOpen,
         to: "/catalog",
+    },
+    {
+        id: "bg-remover",
+        label: "BG Remover",
+        icon: Eraser,
+        to: "/bg-remover",
     },
     {
         id: "ai-banners",

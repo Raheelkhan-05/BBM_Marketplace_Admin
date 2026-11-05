@@ -28,6 +28,7 @@ import AdminSellerListingsPage from "./pages/admin/AdminSellerListingsPage.jsx";
 import AdminGroupBannersPage from "./pages/admin/AdminGroupBannersPage.jsx";
 import AdminEntityBannersPage from "./pages/admin/AdminEntityBannersPage.jsx";
 import AdminAiBannersPage from "./pages/admin/AdminAiBannersPage.jsx";
+import AdminImageStudioPage from "./pages/admin/AdminImageStudioPage.jsx";
 
 
 function App() {
@@ -69,6 +70,7 @@ function App() {
                   <Route path="/group-banners" element={<AdminGroupBannersPage />} />
                   <Route path="/entity-banners" element={<AdminEntityBannersPage />} />
                   <Route path="/ai-banners" element={<AdminAiBannersPage />} />
+                  <Route path="/image-studio" element={<AdminImageStudioPage />} />
                 </Route>
               </Route>
             </Routes>
