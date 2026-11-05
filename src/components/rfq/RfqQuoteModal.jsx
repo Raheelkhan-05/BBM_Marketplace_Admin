@@ -438,8 +438,8 @@ export default function RfqQuoteModal({ enquiry, onClose, onDone, initialSubmiss
                             <div className="rqm-f">
                                 <label>Does this price include GST?</label>
                                 <div className="rqm-chips" role="group">
-                                    <button type="button" aria-pressed={f.gstIncl} onClick={() => convertTo(f.basis, true)}>Includes GST</button>
-                                    <button type="button" aria-pressed={!f.gstIncl} onClick={() => convertTo(f.basis, false)}>Excludes GST</button>
+                                    <button type="button" aria-pressed={f.gstIncl} onClick={() => convertTo(f.basis, true)}>with GST</button>
+                                    <button type="button" aria-pressed={!f.gstIncl} onClick={() => convertTo(f.basis, false)}>without GST</button>
                                 </div>
                             </div>
                             <div className="rqm-f">

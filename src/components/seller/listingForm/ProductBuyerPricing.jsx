@@ -208,7 +208,7 @@ function BuyerPriceEditor({ product, draft, setDraft }) {
                         const currentVal = currentRaw !== "" && currentRaw != null ? Number(currentRaw) : reference;
                         const step = round2(reference * 0.02) || 1;
                         return (
-                            // key includes gstMode: forces a clean remount on toggle
+                            // key with GSTMode: forces a clean remount on toggle
                             // instead of relying on InlineWheelField's echo-vs-external
                             // grace-period heuristic to notice a same-field seed swap —
                             // same reasoning CustomPricingModal's ProductEditCard uses.

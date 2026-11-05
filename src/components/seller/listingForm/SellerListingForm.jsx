@@ -469,7 +469,7 @@ function computeMissing(form) {
     add(!(Number(form.moq) > 0), "moq", "MOQ");
     add(form.sampleAvailable == null, "sampleAvailable", "Sample availability");
     // (gstPercent check removed from its old spot below this)
-    add(form.gstInclusive == null, "gstInclusive", "Price includes GST");
+    add(form.gstInclusive == null, "gstInclusive", "Price with GST");
     add(!(Number(form.basePrice) > 0), "basePrice", "Base price");
     add(form.freightIncluded == null, "freightIncluded", "Freight included");
     add(!Array.isArray(form.marketingServices), "marketingServices", "Marketing & Promotion plan");
@@ -843,7 +843,7 @@ export default function SellerListingForm({
 
     // Live price preview — mirrors normalizeEnteredPrice on the backend.
     //
-    // Two modes, driven by "Price includes GST?":
+    // Two modes, driven by "Price with GST?":
     // - Inclusive: the price the seller types is the ceiling — exactly what the
     //   buyer should pay. GST% and commission% are both reverse-calculated OUT
     //   of it together (as a combined % of the base), instead of commission
@@ -1758,7 +1758,7 @@ export default function SellerListingForm({
                     <div className="grid grid-cols-1 gap-2.5 items-end justify-end self-end">
                         <FieldAnchor fieldKey="gstInclusive">
                             <ToggleField3
-                                label="Price includes GST?"
+                                label="Price with GST?"
                                 value={form.gstInclusive}
                                 onChange={(v) => { setField("gstInclusive", v); touch("gstInclusive"); }}
                                 error={isErr("gstInclusive")}

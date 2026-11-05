@@ -57,7 +57,7 @@ function computeMissing(f, only) {
     add(f.sampleAvailable == null, "packaging", "sampleAvailable", "Sample availability");
     add(f.sampleAvailable && !(Number(f.sampleQuantity) > 0), "packaging", "sampleQuantity", "Sample quantity");
     add(!(Number(f.basePrice) > 0), "pricing", "basePrice", "Price");
-    add(f.gstInclusive == null, "pricing", "gstInclusive", "Price includes GST");
+    add(f.gstInclusive == null, "pricing", "gstInclusive", "Price with GST");
     add(f.freightIncluded == null, "pricing", "freightIncluded", "Freight included");
     add(!f.stockType, "fulfilment", "stockType", "Fulfilment type");
     add(f.stockType === "ready_stock" && (f.stockQuantity === "" || f.stockQuantity == null), "fulfilment", "stockQuantity", "Available stock");
@@ -284,7 +284,7 @@ export default function GrowEditListing({ token, submissionId, focusSection, onC
                             <Field label="Price *" bad={bad("basePrice")} cap={pricing > 0 ? `Buyers pay about ₹${pricing.toLocaleString("en-IN")} per ${saleU} including GST.` : ""}>
                                 <div className="gax-inp"><span className="pre">₹</span><input inputMode="decimal" value={f.basePrice} onChange={(e) => set("basePrice", num(e.target.value))} /></div>
                             </Field>
-                            <Field label="Price includes GST? *" bad={bad("gstInclusive")}><YN v={f.gstInclusive} on={(v) => set("gstInclusive", v)} /></Field>
+                            <Field label="Price with GST? *" bad={bad("gstInclusive")}><YN v={f.gstInclusive} on={(v) => set("gstInclusive", v)} /></Field>
                             <Field label="Freight included? *" bad={bad("freightIncluded")}><YN v={f.freightIncluded} on={(v) => set("freightIncluded", v)} /></Field>
                             <div className="gax-f">
                                 <label>Quantity discounts (optional)</label>

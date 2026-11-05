@@ -790,7 +790,7 @@ export function Wizard({ token, say, onExit, onNeedOnboarding, onNeedLogin, onSu
                 <F l="Price *" c={pk ? `Works out to ₹${pk.toLocaleString("en-IN", { maximumFractionDigits: 2 })} per Pack.` : ""}>
                     <div className="inp"><span className="pre">₹</span><input type="number" min="0" inputMode="decimal" value={P.price} onChange={(e) => set("price", e.target.value)} /></div>
                 </F>
-                <F l="Price includes GST? *"><YN v={yn(P.inc)} on={(v) => set("inc", v)} /></F>
+                <F l="Price with GST? *"><YN v={yn(P.inc)} on={(v) => set("inc", v)} /></F>
                 <F l="Freight included? *"><YN v={yn(P.fr)} on={(v) => set("fr", v)} /></F>
                 <F l="Price valid for *" c="After this the listing pauses and you can renew it in one tap.">
                     <Chips v={P.val} on={(v) => set("val", v)} o={VALIDITY_OPTIONS.map((o) => [o.hours, o.label])} />
