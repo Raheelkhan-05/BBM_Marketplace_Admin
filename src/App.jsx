@@ -70,7 +70,7 @@ function App() {
                   <Route path="/group-banners" element={<AdminGroupBannersPage />} />
                   <Route path="/entity-banners" element={<AdminEntityBannersPage />} />
                   <Route path="/ai-banners" element={<AdminAiBannersPage />} />
-                  <Route path="/image-studio" element={<AdminImageStudioPage />} />
+                  <Route path="/bg-remover" element={<AdminImageStudioPage />} />
                 </Route>
               </Route>
             </Routes>
