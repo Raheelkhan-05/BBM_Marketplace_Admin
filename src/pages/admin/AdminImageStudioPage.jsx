@@ -1,12 +1,13 @@
 // pages/admin/AdminImageStudioPage.jsx — bulk white-background product images.
 // 1) pick products  2) AI cut-out runs in a worker, finishing runs on the server  3) review  4) apply atomically (undo available)
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Loader2, Sparkles, Search, Check, RotateCcw, Undo2, X, Trash2, ChevronLeft, ChevronRight, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Loader2, Sparkles, Search, Check, RotateCcw, Undo2, X, Trash2, ChevronLeft, ChevronRight, AlertTriangle, Upload } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { C } from "../../components/catalog/tokens";
 import { Chip } from "../../components/orders/disputeUi.jsx";
 import { resizedImageUrl } from "../../utils/imageUrl";
+import { probeImage, describeProblem } from "../../utils/imageProbe.js";
 import {
     fetchStudioProducts, planStudioBatch, uploadCutout, failStudioAsset, retryStudioItem,
     applyStudioItems, revertStudioItem, discardStudioBatch, proxyUrlFor,
@@ -14,6 +15,11 @@ import {
 
 const GREEN = "#22A06B";
 const MAX_SELECT = 100;
+// AI model input sizes, tried in order. Each step down starts a FRESH worker (fresh memory) if the
+// browser runs out of memory. Raise the first value (e.g. 768) on powerful computers for finer edges.
+// BiRefNet_lite-ONNX requires a fixed 1024x1024 input.
+// Never decrease this value for this model.
+const RESOLUTIONS = [1024];
 const FILTERS = [{ k: "todo", t: "Not white yet" }, { k: "done", t: "Already white" }, { k: "all", t: "All" }];
 const SIZES = [800, 1000, 1200, 1600];
 const thumb = (u, w = 240) => (u ? resizedImageUrl(u, { width: w }) : "");
@@ -61,6 +67,41 @@ function ProductCard({ p, selected, onToggle, disabled }) {
     );
 }
 
+// Main-thread fallback decoder: <img> understands more formats than the worker's createImageBitmap.
+async function rasterize(src, token) {
+    let blob = src;
+    if (typeof src === "string") {
+        try {
+            const r = await fetch(src);
+            if (!r.ok) throw new Error("bad response");
+            blob = await r.blob();
+        } catch {
+            const r = await fetch(proxyUrlFor(src), { headers: { Authorization: `Bearer ${token}` } });
+            if (!r.ok) throw new Error("Couldn't download the original image.");
+            blob = await r.blob();
+        }
+    }
+    const url = URL.createObjectURL(blob);
+    try {
+        const img = new Image();
+        img.src = url;
+        await img.decode();
+        const nw = img.naturalWidth || 1000, nh = img.naturalHeight || 1000;
+        const k = Math.min(1, 1024 / Math.max(nw, nh));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(nw * k)); canvas.height = Math.max(1, Math.round(nh * k));
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        const png = await new Promise((res) => canvas.toBlob(res, "image/png"));
+        if (!png) throw new Error("encode");
+        return png;
+    } catch (e) {
+        if (e?.message === "Couldn't download the original image.") throw e;
+        throw new Error(describeProblem(await probeImage(blob)));
+    } finally {
+        URL.revokeObjectURL(url);
+    }
+}
+
 export default function AdminImageStudioPage() {
     const navigate = useNavigate();
     const { token } = useAuth();
@@ -77,7 +118,7 @@ export default function AdminImageStudioPage() {
     const [selected, setSelected] = useState(() => new Map());      // id -> product
 
     // ---- output style
-    const [padding, setPadding] = useState(8);                       // percent
+    const [padding, setPadding] = useState(4);                       // percent
     const [size, setSize] = useState(1200);
     const [enhance, setEnhance] = useState(true);
 
@@ -101,31 +142,67 @@ export default function AdminImageStudioPage() {
     const cancelRef = useRef(false);
     const activeRuns = useRef(0);
 
-    const getWorker = useCallback(() => {
-        if (workerRef.current) return workerRef.current;
+    const resIdxRef = useRef(0);
+
+    // (Re)creates the worker. Called again with a lower resolution after an out-of-memory crash,
+    // because a WebAssembly heap can't shrink — only a brand-new worker gets clean memory.
+    const spawnWorker = useCallback(() => {
+        workerRef.current?.terminate();
         const w = new Worker(new URL("../../workers/bgRemoval.worker.js", import.meta.url), { type: "module" });
         w.onmessage = (e) => {
             const m = e.data || {};
             if (m.type === "model") setModel((s) => ({ ...s, status: m.status, pct: m.pct ?? s.pct, device: m.device || s.device }));
             else if (m.type === "done") { waiters.current.get(m.id)?.resolve(m.blob); waiters.current.delete(m.id); }
-            else if (m.type === "error") { waiters.current.get(m.id)?.reject(new Error(m.message)); waiters.current.delete(m.id); }
+            else if (m.type === "error") { waiters.current.get(m.id)?.reject(Object.assign(new Error(m.message), { code: m.code })); waiters.current.delete(m.id); }
         };
         w.onerror = () => {
+            if (workerRef.current !== w) return;
             setModel((s) => ({ ...s, status: "error" }));
-            waiters.current.forEach((x) => x.reject(new Error("The AI worker crashed.")));
+            waiters.current.forEach((x) => x.reject(Object.assign(new Error("The image tool crashed."), { code: "memory" })));
             waiters.current.clear();
             workerRef.current = null;
         };
         workerRef.current = w;
+        w.postMessage({ type: "init", resolution: RESOLUTIONS[resIdxRef.current] });
         return w;
     }, []);
+    const getWorker = useCallback(() => workerRef.current || spawnWorker(), [spawnWorker]);
     useEffect(() => () => workerRef.current?.terminate(), []);
 
-    const removeBackground = useCallback((url) => new Promise((resolve, reject) => {
+    const callWorker = useCallback((input) => new Promise((resolve, reject) => {
         const id = ++seq.current;
         waiters.current.set(id, { resolve, reject });
-        getWorker().postMessage({ type: "run", id, url, proxyUrl: proxyUrlFor(url), token: tokenRef.current });
+        getWorker().postMessage({ type: "run", id, token: tokenRef.current, ...input });
     }), [getWorker]);
+
+    // src: an image URL (original product photo) or a File the admin picked from their computer.
+    //  - "memory": restart the worker at the next lower resolution and redo this image
+    //  - "decode": let the page's regular <img> decoder try once (SVG / AVIF), then give up with a precise reason
+    const removeBackground = useCallback(async (src) => {
+        let input = typeof src === "string" ? { url: src, proxyUrl: proxyUrlFor(src) } : { file: src };
+        let rasterized = false;
+        for (; ;) {
+            try {
+                return await callWorker(input);
+            } catch (e) {
+                if (e.code === "memory") {
+                    if (resIdxRef.current >= RESOLUTIONS.length - 1) {
+                        throw new Error("Your browser ran out of memory. Close other tabs or restart the browser, then Retry. Using a smaller photo also helps.");
+                    }
+                    resIdxRef.current += 1;
+                    setModel({ status: "loading", pct: 0, device: "" });
+                    spawnWorker();
+                    continue;
+                }
+                if (e.code === "decode" && !rasterized) {
+                    rasterized = true;
+                    input = { file: await rasterize(src, tokenRef.current) };
+                    continue;
+                }
+                throw e;
+            }
+        }
+    }, [callWorker, spawnWorker]);
 
     // ---- list loading
     useEffect(() => { const t = setTimeout(() => { setDebouncedQ(q.trim()); setPage(1); }, 300); return () => clearTimeout(t); }, [q]);
@@ -169,7 +246,7 @@ export default function AdminImageStudioPage() {
     const runQueue = useCallback(async (queue) => {
         if (!queue.length) return;
         activeRuns.current++; setRunning(true); cancelRef.current = false;
-        getWorker().postMessage({ type: "init" });
+        getWorker();
         const inflight = new Set();
         try {
             for (const job of queue) {
@@ -177,7 +254,7 @@ export default function AdminImageStudioPage() {
                 patchAsset(job.itemId, job.assetId, { status: "cutting", error: null });
                 let blob;
                 try {
-                    blob = await removeBackground(job.sourceUrl);
+                    blob = await removeBackground(job.file || job.sourceUrl);
                 } catch (e) {
                     if (cancelRef.current) break;
                     const r = await failStudioAsset(tokenRef.current, job.assetId, e.message);
@@ -227,6 +304,31 @@ export default function AdminImageStudioPage() {
         const ids = new Set(r.assets.map((a) => a.id));
         patchItem(item.itemId, (i) => ({ ...i, status: "processing", error: null, assets: i.assets.map((a) => (ids.has(a.id) ? { ...a, status: "pending", error: null } : a)) }));
         runQueue(r.assets.map((a) => ({ assetId: a.id, itemId: item.itemId, sourceUrl: a.sourceUrl })));
+    };
+
+    // ---- "use my own photo": replace one image with a file from the admin's computer.
+    // It goes through the exact same pipeline (cut-out -> white background -> finish) and still
+    // maps onto the original URL, so the all-or-nothing apply works exactly as before.
+    const fileRef = useRef(null);
+    const pickTarget = useRef(null);
+    const pickPhoto = (item, asset) => {
+        pickTarget.current = { itemId: item.itemId, assetId: asset.id, sourceUrl: asset.sourceUrl };
+        fileRef.current?.click();
+    };
+    const onFile = (e) => {
+        const file = e.target.files?.[0];
+        e.target.value = "";
+        const t = pickTarget.current;
+        if (!file || !t) return;
+        if (!/^image\/(png|jpe?g|webp)$/.test(file.type)) return setError("Please choose a PNG, JPG or WebP image.");
+        if (file.size > 15 * 1024 * 1024) return setError("That image is larger than 15 MB.");
+        setError(null);
+        const localUrl = URL.createObjectURL(file);
+        patchItem(t.itemId, (i) => ({
+            ...i, status: "processing", error: null,
+            assets: i.assets.map((a) => (a.id === t.assetId ? { ...a, status: "pending", error: null, newUrl: null, localUrl } : a)),
+        }));
+        runQueue([{ ...t, file }]);
     };
 
     const applicable = useMemo(() => items.filter((i) => i.status === "ready" && !excluded.has(i.itemId)), [items, excluded]);
@@ -303,7 +405,7 @@ export default function AdminImageStudioPage() {
             {!batchId ? (
                 <>
                     {/* output style */}
-                    <section className="mt-4 rounded-2xl border bg-white p-3 sm:p-4" style={{ borderColor: C.hair }}>
+                    {/* <section className="mt-4 rounded-2xl border bg-white p-3 sm:p-4" style={{ borderColor: C.hair }}>
                         <p className="text-[13px] font-extrabold" style={{ color: C.ink }}>Output style</p>
                         <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
                             <label className="block">
@@ -324,7 +426,7 @@ export default function AdminImageStudioPage() {
                                 </div>
                             </div>
                         </div>
-                    </section>
+                    </section> */}
 
                     {/* picker toolbar */}
                     <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -413,18 +515,27 @@ export default function AdminImageStudioPage() {
                                     </div>
                                     {i.error && <p className="mt-1.5 text-[11.5px] font-semibold text-red-700">{i.error}</p>}
                                     <div className="mt-2.5 flex gap-3 overflow-x-auto pb-1">
-                                        {i.assets.map((a) => (
-                                            <button key={a.id} type="button" disabled={!a.newUrl} onClick={() => a.newUrl && setLightbox({ before: a.sourceUrl, after: a.newUrl })}
-                                                className="flex shrink-0 flex-col items-center gap-1 rounded-xl border p-1.5 text-left" style={{ borderColor: a.status === "failed" ? "#fca5a5" : C.hair }}>
-                                                <div className="flex items-center gap-1.5">
-                                                    <Thumb src={thumb(a.sourceUrl, 160)} label="Before" />
-                                                    <Thumb src={a.newUrl} label="After" tone="after" />
+                                        {i.assets.map((a) => {
+                                            const editable = !["applied", "reverted"].includes(i.status);
+                                            const busyAsset = ["cutting", "uploading"].includes(a.status);
+                                            return (
+                                                <div key={a.id} className="flex shrink-0 flex-col items-center gap-1 rounded-xl border p-1.5" style={{ borderColor: a.status === "failed" ? "#fca5a5" : C.hair }}>
+                                                    <button type="button" disabled={!a.newUrl} aria-label="Compare before and after"
+                                                        onClick={() => a.newUrl && setLightbox({ before: a.localUrl || a.sourceUrl, after: a.newUrl })} className="flex items-center gap-1.5">
+                                                        <Thumb src={a.localUrl || thumb(a.sourceUrl, 160)} label={a.localUrl ? "Your photo" : "Before"} />
+                                                        <Thumb src={a.newUrl} label="After" tone="after" />
+                                                    </button>
+                                                    <span className="max-w-[9.5rem] text-center text-[10.5px] font-bold" style={{ color: a.status === "failed" ? "#b91c1c" : a.status === "done" ? "#157a50" : C.muted }}>
+                                                        {a.status === "failed" ? (a.error || "Failed") : STEP_LABEL[a.status]}
+                                                    </span>
+                                                    {editable && !busyAsset && (
+                                                        <button type="button" onClick={() => pickPhoto(i, a)} className="flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10.5px] font-bold" style={{ borderColor: C.hair, color: C.secondary }}>
+                                                            <Upload className="h-3 w-3" /> {a.localUrl ? "Change photo" : "Use my photo"}
+                                                        </button>
+                                                    )}
                                                 </div>
-                                                <span className="text-[10.5px] font-bold" style={{ color: a.status === "failed" ? "#b91c1c" : a.status === "done" ? "#157a50" : C.muted }}>
-                                                    {a.status === "failed" ? (a.error || "Failed") : STEP_LABEL[a.status]}
-                                                </span>
-                                            </button>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 </article>
                             );
@@ -454,6 +565,8 @@ export default function AdminImageStudioPage() {
                     </div>
                 </>
             )}
+
+            <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={onFile} />
 
             {lightbox && (
                 <div role="dialog" aria-modal="true" className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" onClick={() => setLightbox(null)}>
