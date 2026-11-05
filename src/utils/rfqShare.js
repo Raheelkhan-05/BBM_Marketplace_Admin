@@ -1,7 +1,7 @@
 // utils/rfqShare.js — share / copy the public link of a single enquiry.
 import { fmtNum } from "./rfqUtils.js";
 
-export const enquiryPath = (id) => `/grow/enquiry/${id}`;
+export const enquiryPath = (id) => `/sell/enquiry/${id}`;
 export const enquiryUrl = (id) => `${window.location.origin}${enquiryPath(id)}`;
 
 async function copyText(text) {
