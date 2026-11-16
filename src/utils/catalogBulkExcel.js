@@ -1,7 +1,7 @@
 // utils/catalogBulkExcel.js
-// Builds the template (dropdowns, grey = optional, orange = still needed, tips on click, hidden Lists sheet)
+// Builds the template (dropdowns for Unit and GST %, grey = optional, orange = still needed, tips on click, hidden Lists sheet)
 // and reads a filled-in file back. Needs the "exceljs" package (already used by the seller bulk upload).
-import { COLS, MAX_ROWS, norm } from "./catalogBulkSchema.js";
+import { COLS, MAX_ROWS, GST_RATES, norm } from "./catalogBulkSchema.js";
 
 const loadExcel = async () => { const m = await import("exceljs"); return m.default || m; };
 
@@ -10,9 +10,9 @@ const headerText = (c) => (c.required ? c.header : `${c.header} (optional)`);
 const normHeader = (s) => norm(String(s).replace(/\(optional\)/i, "")).replace(/[^a-z0-9]+/g, " ").trim();
 
 const EXAMPLES = [
-    { cat: "Lubricants", sub: "Two-wheeler engine oil", gp: "Motorcycle engine oil 1L bottle", n: "Shell Advance AX7 10W30", b: "Shell", mf: "Shell India Markets Pvt Ltd", model: "AX7-10W30-1L", grade: "10W-30", u: "Litres", ps: 1, mps: 12, spec: "Volume: 1L; API Grade: SL", imgs: "https://example.com/front.jpg, https://example.com/back.jpg" },
-    { cat: "Lubricants", sub: "Two-wheeler engine oil", gp: "Motorcycle engine oil 1L bottle", n: "Castrol Activ 20W40", b: "Castrol", mf: "Castrol India Ltd", model: "ACT-20W40-1L", grade: "20W-40", u: "Litres", ps: 1, mps: 12, spec: "Volume: 1L", imgs: "https://example.com/castrol.jpg" },
-    { cat: "Bearings", sub: "Ball bearings", gp: "Deep groove ball bearing 6205", n: "SKF 6205-2RS", b: "SKF", mf: "SKF India Ltd", model: "6205-2RS", grade: "", u: "Pieces", ps: 1, mps: 50, spec: "", imgs: "" },
+    { n: "Shell Advance AX7 10W30", b: "Shell", model: "AX7-10W30-1L", grade: "10W-30", u: "Litres", ps: 1, mps: 12, gst: 18, spec: "Volume: 1L; API Grade: SL", imgs: "https://example.com/front.jpg, https://example.com/back.jpg" },
+    { n: "Castrol Activ 20W40", b: "Castrol", model: "ACT-20W40-1L", grade: "20W-40", u: "Litres", ps: 1, mps: 12, gst: 18, spec: "Volume: 1L", imgs: "https://example.com/castrol.jpg" },
+    { n: "SKF 6205-2RS", b: "SKF", model: "6205-2RS", grade: "", u: "Pieces", ps: 1, mps: 50, gst: 18, spec: "", imgs: "" },
 ];
 
 const CELL_TYPES = (c, unitCount) => {
@@ -21,6 +21,7 @@ const CELL_TYPES = (c, unitCount) => {
         promptTitle: c.header.slice(0, 32), prompt: c.tip.slice(0, 255), errorTitle: "Please check this box",
     };
     if (c.key === "u") return { ...base, type: "list", formulae: [`Lists!$A$1:$A$${Math.max(unitCount, 1)}`], error: "Pick a unit from the list." };
+    if (c.key === "gst") return { ...base, type: "list", formulae: [`Lists!$B$1:$B$${GST_RATES.length}`], error: "Pick a GST % from the list." };
     if (c.key === "ps") return { ...base, type: "decimal", operator: "greaterThan", formulae: [0], error: "Enter a number bigger than 0." };
     if (c.key === "mps") return { ...base, type: "whole", operator: "greaterThanOrEqual", formulae: [1], error: "Enter a whole number, 1 or more." };
     return { ...base, type: "textLength", operator: "lessThanOrEqual", formulae: [c.key === "imgs" || c.key === "spec" ? 1500 : 300], error: "This text is too long." };
@@ -84,24 +85,26 @@ export async function downloadCatalogTemplate({ units }) {
     [
         "How to fill this sheet",
         "1. Use the Products sheet. One row = one product. The Example sheet shows three finished rows.",
-        "2. Type the Category, Subcategory and Generic Product names on every row that belongs to them. Names are matched ignoring capital letters.",
-        "3. A name that already exists in the catalog is reused. A new name is created automatically. Image links for these three are optional and only used for new ones.",
-        "4. Orange box = still needed. Grey box = can be skipped. Click any box to see a tip.",
-        "5. Unit has a dropdown. If there is no outer box, type 1 in 'Packs In 1 Outer Box'.",
-        "6. Photos can be added on the website after upload, so 'Photo Links' can stay empty.",
-        `7. Up to ${MAX_ROWS} products per file. Do not rename or delete the column headings.`,
+        "2. A product is identified by its Product Name + Brand Name. If the same name and brand is already in the catalog, the row is left out.",
+        "3. Products are added to the catalog without a category. You map them to a generic product later (Needs mapping).",
+        "4. GST % belongs to the product, so pick it carefully. Every seller who lists this product uses it.",
+        "5. Orange box = still needed. Grey box = can be skipped. Click any box to see a tip.",
+        "6. Unit and GST % have dropdowns. If there is no outer box, type 1 in 'Packs In 1 Outer Box'.",
+        "7. Photos can be added on the website after upload, so 'Photo Links' can stay empty.",
+        `8. Up to ${MAX_ROWS} products per file. Do not rename or delete the column headings.`,
     ].forEach((t, i) => { const c = help.getCell(i + 1, 1); c.value = t; c.alignment = { wrapText: true, vertical: "top" }; if (i === 0) c.font = { bold: true, size: 14, color: { argb: INK } }; });
 
-    /* Lists: the unit dropdown source, hidden so it cannot be edited */
+    /* Lists: dropdown sources, hidden so they cannot be edited. A = units, B = GST rates */
     const lists = wb.addWorksheet("Lists", { state: "veryHidden" });
     units.forEach((u, i) => { lists.getCell(i + 1, 1).value = u; });
+    GST_RATES.forEach((g, i) => { lists.getCell(i + 1, 2).value = g; });
 
     wb.views = [{ activeTab: 0 }];
     const buf = await wb.xlsx.writeBuffer();
     const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = "full-catalog-upload-template.xlsx";
+    a.href = url; a.download = "catalog-product-upload-template.xlsx";
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
@@ -119,7 +122,7 @@ function cellText(v, asLink = false) {
     return String(v).trim();
 }
 
-// Returns [{ rowNo, cat, catImg, ... }] (strings). Throws an Error with a plain-English message.
+// Returns [{ rowNo, n, b, ... }] (strings). Throws an Error with a plain-English message.
 export async function readCatalogSheet(file) {
     const ExcelJS = await loadExcel();
     const wb = new ExcelJS.Workbook();
@@ -147,7 +150,7 @@ export async function readCatalogSheet(file) {
         let any = false;
         for (const c of COLS) {
             const col = idx[c.key];
-            const t = col ? cellText(row.getCell(col).value, c.key.endsWith("Img") || c.key === "imgs") : "";
+            const t = col ? cellText(row.getCell(col).value, c.key === "imgs") : "";
             o[c.key] = t;
             if (t) any = true;
         }

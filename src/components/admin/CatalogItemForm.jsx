@@ -1,10 +1,10 @@
 // components/admin/CatalogItemForm.jsx
 // The editable review form for ONE bulk-uploaded catalog product. Fully controlled: the page owns the data.
-// Same guidance model as the seller bulk form: problems in red on the exact field, the first thing missing is marked
-// "Fill this next", and image boxes for Category / Subcategory / Generic Product only appear when that level is NEW.
+// Layout: Product -> Unit, packing and GST -> Specifications -> Photos.
+// Problems show in red on the exact field, and the first thing missing is marked "Fill this next".
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { checkCatalogRows, uploadCatalogImage } from "../../utils/api.adminCatalogBulk.js";
-import { MAX_PHOTOS } from "../../utils/catalogBulkSchema.js";
+import { MAX_PHOTOS, GST_RATES } from "../../utils/catalogBulkSchema.js";
 import { useDrop } from "../grow/growUi.js";
 
 const isImg = (f) => !!f?.type?.startsWith("image/");
@@ -44,25 +44,6 @@ function Sec({ id, title, sub, bad, children }) {
     );
 }
 
-function OneImage({ url, busy, onPick, onClear }) {
-    return (
-        <div className="bk-photo">
-            <div className="ph gx-dz">
-                {url && (
-                    <div className="th" style={{ backgroundImage: `url(${url})` }}>
-                        <button type="button" className="x" aria-label="Remove image" onClick={onClear}>×</button>
-                    </div>
-                )}
-                {!url && (
-                    <label className="add">{busy ? "…" : "+ Add"}
-                        <input type="file" accept="image/*" hidden disabled={busy} onChange={(e) => { onPick(e.target.files?.[0]); e.target.value = ""; }} />
-                    </label>
-                )}
-            </div>
-        </div>
-    );
-}
-
 export default function CatalogItemForm({ token, P, onChange, say, units, errors, showErrors, onCheck }) {
     const ref = useRef(P);
     ref.current = P;
@@ -72,8 +53,8 @@ export default function CatalogItemForm({ token, P, onChange, say, units, errors
     checkRef.current = onCheck;
     const patch = useCallback((o) => { ref.current = { ...ref.current, ...o }; cbRef.current(ref.current); }, []);
 
-    const [chk, setChk] = useState(null);   // what already exists in the catalog for this product
-    const [up, setUp] = useState("");       // "" | "im" | "catImg" | "subImg" | "gpImg"
+    const [chk, setChk] = useState(null);   // { dup } - is this name + brand already in the catalog?
+    const [up, setUp] = useState(false);
 
     const st = useMemo(() => {
         const by = new Map();
@@ -82,33 +63,22 @@ export default function CatalogItemForm({ token, P, onChange, say, units, errors
     }, [errors, showErrors]);
     const secBad = (id) => errors.some((e) => e.section === id && (e.field !== "im" || showErrors));
 
-    // Which of Category / Subcategory / Generic Product already exist? Also finds close names ("did you mean").
+    // Is this exact name + brand already in the catalog?
     useEffect(() => {
-        const cat = P.cat.trim(), sub = P.sub.trim(), gp = P.gp.trim();
-        if (!cat && !sub && !gp) { setChk(null); checkRef.current?.(null); return undefined; }
+        const n = P.n.trim(), b = P.b.trim();
+        if (n.length < 2 || !b) { setChk(null); checkRef.current?.(null); return undefined; }
         let live = true;
         const t = setTimeout(async () => {
-            const r = await checkCatalogRows(token, [{ cat, sub, gp, n: P.n.trim(), b: P.b.trim() }], true);
+            const r = await checkCatalogRows(token, [{ n, b }]);
             if (!live || !r?.success) return;
             const it = r.items?.[0] || null;
             setChk(it);
             checkRef.current?.(it);
         }, 450);
         return () => { live = false; clearTimeout(t); };
-    }, [P.cat, P.sub, P.gp, P.n, P.b, token]);
+    }, [P.n, P.b, token]);
 
-    /* uploads */
-    const uploadOne = async (file) => {
-        const r = await uploadCatalogImage(token, file);
-        if (!r?.success) { say(r?.message || "Upload failed. Please try again."); return null; }
-        return r.url;
-    };
-    const pickLevelImage = async (field, file) => {
-        if (!file || up) return;
-        if (!isImg(file)) return say("Please choose an image (JPG, PNG, etc.).");
-        setUp(field);
-        try { const u = await uploadOne(file); if (u) patch({ [field]: u }); } finally { setUp(""); }
-    };
+    /* photos */
     const addPhotos = async (files) => {
         let list = Array.from(files || []).filter(isImg);
         if (!list.length || up) { if (files?.length && !list.length) say("Please choose photos (JPG, PNG, etc.)."); return; }
@@ -116,77 +86,44 @@ export default function CatalogItemForm({ token, P, onChange, say, units, errors
         if (room <= 0) return say(`You can add up to ${MAX_PHOTOS} photos.`);
         if (list.length > room) say(`Only ${room} more photo${room === 1 ? "" : "s"} fit. The extra files were skipped.`);
         list = list.slice(0, room);
-        setUp("im");
+        setUp(true);
         try {
             for (const file of list) {
-                const u = await uploadOne(file);
-                if (u) patch({ im: [...ref.current.im, u].slice(0, MAX_PHOTOS) });
+                const r = await uploadCatalogImage(token, file);
+                if (!r?.success) { say(r?.message || "Upload failed. Please try again."); continue; }
+                patch({ im: [...ref.current.im, r.url].slice(0, MAX_PHOTOS) });
             }
-        } finally { setUp(""); }
+        } finally { setUp(false); }
     };
-    const photoDrop = useDrop(addPhotos, { disabled: !!up });
-
-    /* one hierarchy level: name input, "exists / new" line, "did you mean", and an image box only when it is new */
-    const level = (field, imgField, key, label, placeholder) => {
-        const name = P[field].trim();
-        const node = chk?.[key];
-        const isNew = !!name && !!node && !node.exists;
-        return (
-            <>
-                <F k={field} st={st} l={`${label} *`}>
-                    <In v={P[field]} on={(v) => patch({ [field]: v })} placeholder={placeholder} />
-                    {name.length >= 2 && node && (
-                        <p className="cap" style={{ marginTop: 6 }}>
-                            {node.exists ? `Already in the catalog. It will be reused.` : `New. It will be created.`}
-                        </p>
-                    )}
-                    {isNew && node.similar?.length > 0 && (
-                        <div style={{ marginTop: 6 }}>
-                            <p className="cap" style={{ marginBottom: 4 }}>Did you mean one of these existing names?</p>
-                            <div className="chips">
-                                {node.similar.map((s) => <button key={s} type="button" className="chip" onClick={() => patch({ [field]: s })}>{s}</button>)}
-                            </div>
-                        </div>
-                    )}
-                </F>
-                {isNew && (
-                    <F k={imgField} st={st} l={`${label} image (optional)`} c={`Only used because this ${label.toLowerCase()} is new.`}>
-                        <OneImage url={P[imgField]} busy={up === imgField} onPick={(f) => pickLevelImage(imgField, f)} onClear={() => patch({ [imgField]: "" })} />
-                    </F>
-                )}
-            </>
-        );
-    };
+    const photoDrop = useDrop(addPhotos, { disabled: up });
 
     const outer = Number(P.mps) > 1;
+    const isNew = !!chk && !chk.dup && P.n.trim().length >= 2 && !!P.b.trim();
 
     return (
         <div className="bk-form">
-            {/* ---------------- where it belongs ---------------- */}
-            <Sec id="hier" title="Where it belongs" sub="Category, subcategory and generic product. Names that exist are reused, new names are created." bad={secBad("hier")}>
-                {level("cat", "catImg", "cat", "Category", "e.g. Lubricants")}
-                {level("sub", "subImg", "sub", "Subcategory", "e.g. Two-wheeler engine oil")}
-                {level("gp", "gpImg", "gp", "Generic Product", "e.g. Motorcycle engine oil 1L bottle")}
-            </Sec>
-
             {/* ---------------- product ---------------- */}
             <Sec id="product" title="Product" sub="Name, brand and part details." bad={secBad("product")}>
-                <F k="n" st={st} l="Product name *"><In v={P.n} on={(v) => patch({ n: v })} placeholder="e.g. Shell Advance AX7 10W30" /></F>
+                <F k="n" st={st} l="Product name *" c={isNew ? "Not in the catalog yet. It will be added." : ""}>
+                    <In v={P.n} on={(v) => patch({ n: v })} placeholder="e.g. Shell Advance AX7 10W30" />
+                </F>
                 <F k="b" st={st} l="Brand *"><In v={P.b} on={(v) => patch({ b: v })} placeholder="e.g. Shell" /></F>
-                <F k="mf" st={st} l="Manufacturer *"><In v={P.mf} on={(v) => patch({ mf: v })} placeholder="e.g. Shell India Markets Pvt Ltd" /></F>
                 <F k="model" st={st} l="Model / Part No / SKU *"><In v={P.model} on={(v) => patch({ model: v })} placeholder="e.g. AX7-10W30-1L" /></F>
                 <F st={st} l="Variant / Grade (optional)"><In v={P.grade} on={(v) => patch({ grade: v })} placeholder="e.g. 10W-30" /></F>
             </Sec>
 
-            {/* ---------------- packing ---------------- */}
-            <Sec id="packing" title="Unit and packing" sub="How this product is measured and packed." bad={secBad("packing")}>
+            {/* ---------------- packing + GST ---------------- */}
+            <Sec id="packing" title="Unit, packing and GST" sub="How this product is measured and packed, and its GST rate." bad={secBad("packing")}>
                 <F k="u" st={st} l="Unit *" c="The smallest measure the product is sold in."><Chips v={P.u} on={(v) => patch({ u: v })} o={units.map((u) => [u, u])} /></F>
                 <F k="ps" st={st} l={P.u ? `How many ${P.u} are in 1 Pack? *` : "Items in 1 Pack *"}><In v={P.ps} on={(v) => patch({ ps: num(v) })} inputMode="decimal" placeholder="e.g. 1" /></F>
                 <F k="mps" st={st} l="How many Packs are in 1 outer box? *" c="Type 1 if there is no outer box.">
                     <In v={P.mps} on={(v) => patch({ mps: v.replace(/\D/g, "") })} inputMode="numeric" placeholder="e.g. 12" />
                 </F>
+                <F k="gst" st={st} l="GST % *" c="GST belongs to the product, so every seller who lists it uses this rate.">
+                    <Chips v={P.gst} on={(v) => patch({ gst: v })} o={GST_RATES.map((g) => [String(g), `${g}%`])} />
+                </F>
                 {Number(P.ps) > 0 && Number(P.mps) >= 1 && P.u && (
-                    <div className="brk"><div><span>Packing</span><b>1 Pack = {P.ps} {P.u}{outer ? ` · 1 Outer box = ${P.mps} Packs` : " · no outer box"}</b></div></div>
+                    <div className="brk"><div><span>Packing</span><b>1 Pack = {P.ps} {P.u}{outer ? ` · 1 Outer box = ${P.mps} Packs` : " · no outer box"}{P.gst !== "" ? ` · GST ${P.gst}%` : ""}</b></div></div>
                 )}
             </Sec>
 
@@ -222,8 +159,8 @@ export default function CatalogItemForm({ token, P, onChange, say, units, errors
                                 </div>
                             ))}
                             {P.im.length < MAX_PHOTOS && (
-                                <label className="add">{up === "im" ? "…" : "+ Add"}
-                                    <input type="file" accept="image/*" multiple hidden disabled={!!up} onChange={(e) => { addPhotos(e.target.files); e.target.value = ""; }} />
+                                <label className="add">{up ? "…" : "+ Add"}
+                                    <input type="file" accept="image/*" multiple hidden disabled={up} onChange={(e) => { addPhotos(e.target.files); e.target.value = ""; }} />
                                 </label>
                             )}
                         </div>

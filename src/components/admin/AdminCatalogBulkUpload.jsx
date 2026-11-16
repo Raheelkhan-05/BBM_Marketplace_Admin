@@ -1,14 +1,15 @@
 // components/admin/AdminCatalogBulkUpload.jsx
-// Admin bulk upload of brand items across the whole hierarchy (Category > Subcategory > Generic Product).
+// Admin bulk upload of catalog products (no category path needed).
 //   1. download the Excel template   2. upload it (every row is checked, nothing is thrown away)
 //   3. review one product at a time (or use Bulk actions)   4. "Confirm and next" adds that product to the catalog
+// Products are added live but UNMAPPED. They appear under "Needs mapping" until an admin maps them to a generic product.
 // Unfinished products are saved on the server per admin (admin_catalog_drafts), so the admin can leave and come back.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     fetchCatalogBulkMeta, checkCatalogRows, fetchCatalogDrafts, saveCatalogDrafts, patchCatalogDraft, deleteCatalogDraft,
     clearCatalogDrafts, bulkCatalogDraftImages, bulkCatalogDraftDelete, submitCatalogDrafts, uploadCatalogImage,
 } from "../../utils/api.adminCatalogBulk.js";
-import { MAX_ROWS, rowToData, parseRows, validateData, quickIssues, itemKey, norm } from "../../utils/catalogBulkSchema.js";
+import { MAX_ROWS, rowToData, parseRows, validateData, quickIssues, itemKey } from "../../utils/catalogBulkSchema.js";
 import { downloadCatalogTemplate, readCatalogSheet } from "../../utils/catalogBulkExcel.js";
 import CatalogItemForm from "./CatalogItemForm.jsx";
 import CatalogDraftManagerPanel from "./CatalogDraftManagerPanel.jsx";
@@ -21,7 +22,6 @@ import "../grow/grow-bulk.css";
 
 const SUBMIT_CHUNK = 25;
 const CHECK_CHUNK = 200;
-const ZERO = { category: 0, subcategory: 0, generic_product: 0 };
 const uuid = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0; return (c === "x" ? r : (r & 3) | 8).toString(16);
 }));
@@ -39,7 +39,7 @@ const jumpTo = (e) => {
     el.scrollIntoView({ behavior: "smooth", block: "center" });
     setTimeout(() => el.querySelector("input:not([type=file]),textarea,button")?.focus({ preventScroll: true }), 350);
 };
-const rowKey = (d) => [d.cat, d.sub, d.gp, d.n, d.b].map(norm).join("|");
+const DUP_CATALOG = "This product is already in the catalog (same name and brand). Change the name or brand, or remove it from this upload.";
 
 export default function AdminCatalogBulkUpload({ token, say, onExit }) {
     useDropGuard();
@@ -53,8 +53,7 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
     const [units, setUnits] = useState([]);
     const [loadError, setLoadError] = useState(null);
     const [manager, setManager] = useState(false);
-    const [chk, setChk] = useState(null);          // catalog check for the product on screen
-    const [tally, setTally] = useState(ZERO);      // hierarchy created during this visit
+    const [chk, setChk] = useState(null);          // catalog check for the product on screen: { dup }
     const root = useRef(null);
     const itemsRef = useRef(items);
     itemsRef.current = items;
@@ -63,7 +62,6 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
     useEffect(() => { setChk(null); }, [curId]);
 
     const uploadFn = useCallback((file) => uploadCatalogImage(token, file), [token]);
-    const addTally = (c) => c && setTally((t) => ({ category: t.category + (c.category || 0), subcategory: t.subcategory + (c.subcategory || 0), generic_product: t.generic_product + (c.generic_product || 0) }));
 
     /* ---------- first load: unit list + saved unfinished products ---------- */
     useEffect(() => {
@@ -115,7 +113,7 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
             const key = itemKey(it.data);
             if (it.status === "pending") {
                 const msgs = [];
-                if (key && seen.has(key)) msgs.push(`Product ${seen.get(key) + 1} in this upload has the same category, name and brand. Change the name or brand, or remove this one.`);
+                if (key && seen.has(key)) msgs.push(`Product ${seen.get(key) + 1} in this upload has the same name and brand. Change the name or brand, or remove this one.`);
                 validateData(it.data, units).forEach((e) => msgs.push(e.msg));
                 out.set(it.id, msgs);
             }
@@ -153,7 +151,7 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
         const snapshot = itemsRef.current;
         const issues = getIssues(snapshot);
         const byId = new Map(snapshot.map((i) => [i.id, i]));
-        const res = { success: true, total: 0, submitted: 0, already: 0, invalid: 0, failed: [], stopped: false, expired: false, created: { ...ZERO }, warnings: [] };
+        const res = { success: true, total: 0, submitted: 0, already: 0, invalid: 0, failed: [], stopped: false, expired: false, warnings: [] };
         const queue = [];
         ids.forEach((id) => {
             const it = byId.get(id);
@@ -183,8 +181,6 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
                     else res.failed.push({ name: nameOf(x.id), msg: x.message || "Could not add this product." });
                 });
                 batch.forEach((id) => { if (!answered.has(id)) res.failed.push({ name: nameOf(id), msg: "No answer from the server for this product." }); });
-                const hs = r.hierarchyStats || {};
-                Object.keys(res.created).forEach((k) => { res.created[k] += hs[k]?.created || 0; });
                 (r.warnings || []).forEach((w) => { if (!res.warnings.includes(w)) res.warnings.push(w); });
                 if (marks.size) {
                     marks.forEach((_, id) => dirty.current.delete(id));
@@ -194,7 +190,6 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
             done += batch.length;
             onProgress?.(done, queue.length);
         }
-        addTally(res.created);
         if (res.expired) say("Your login expired. Sign in again and continue.");
         return res;
     };
@@ -208,13 +203,13 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
         finally { setBusy(""); }
     };
 
-    // Asks the server which categories / subcategories / generic products / products already exist (200 rows per call).
+    // Asks the server which name + brand pairs are already in the catalog (200 unique pairs per call).
     const checkAgainstCatalog = async (rawRows) => {
         const prelim = rawRows.map((r) => rowToData(r, units).data);
         const uniq = new Map();
         const order = prelim.map((d) => {
-            const k = rowKey(d);
-            if (!uniq.has(k)) uniq.set(k, { cat: d.cat, sub: d.sub, gp: d.gp, n: d.n, b: d.b });
+            const k = itemKey(d);
+            if (k && !uniq.has(k)) uniq.set(k, { n: d.n, b: d.b });
             return k;
         });
         const keys = [...uniq.keys()];
@@ -224,7 +219,7 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
             if (!r?.success || r.items?.length !== part.length) return null;
             part.forEach((k, i) => results.set(k, r.items[i]));
         }
-        return order.map((k) => results.get(k));
+        return order.map((k) => (k ? results.get(k) : null));
     };
 
     const onFile = async (file) => {
@@ -236,8 +231,8 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
             if (!raw.length) return say("No products found. Fill in the Products sheet and upload again.");
             const checks = await checkAgainstCatalog(raw);
             const waitingKeys = new Set(itemsRef.current.map((i) => itemKey(i.data)).filter(Boolean));
-            const { results, ignoredImages } = parseRows(raw, { units, checks, waitingKeys });
-            setParsed({ fileName: file.name, results, ignoredImages, checked: !!checks, batchId: uuid() });
+            const { results } = parseRows(raw, { units, checks, waitingKeys });
+            setParsed({ fileName: file.name, results, checked: !!checks, batchId: uuid() });
             setView("summary");
         } catch (err) { say(err?.message || "Could not read this file."); }
         finally { setBusy(""); }
@@ -271,21 +266,20 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
     const noPhoto = pending.filter((i) => !i.data?.im?.length).length;
     const submittedCount = items.filter((i) => i.status === "submitted").length;
     const pos = cur ? items.findIndex((i) => i.id === cur.id) + 1 : 0;
-    const hz = useMemo(() => (chk ? { catNew: !chk.cat.exists, subNew: !chk.sub.exists, gpNew: !chk.gp.exists } : {}), [chk]);
     const dupMsg = useMemo(() => {
         if (!cur) return null;
         const key = itemKey(cur.data);
         if (!key) return null;
-        if (chk?.dup) return "This product is already in the catalog under this generic product. Change the name or brand, or remove it from this upload.";
+        if (chk?.dup) return DUP_CATALOG;
         const at = items.findIndex((i) => i.id === cur.id);
         const other = items.findIndex((i, idx) => idx < at && i.status !== "skipped" && itemKey(i.data) === key);
-        return other >= 0 ? `Product ${other + 1} in this upload has the same category, name and brand. Change the name or brand, or remove this one.` : null;
+        return other >= 0 ? `Product ${other + 1} in this upload has the same name and brand. Change the name or brand, or remove this one.` : null;
     }, [cur, items, chk]);
     const errors = useMemo(() => {
         if (!cur) return [];
-        const list = validateData(cur.data, units, hz);
+        const list = validateData(cur.data, units);
         return dupMsg ? [{ section: "product", field: "n", msg: dupMsg }, ...list] : list;
-    }, [cur, units, hz, dupMsg]);
+    }, [cur, units, dupMsg]);
     const flagged = useMemo(() => new Set(items.filter((i) => i.status === "pending" && quickIssues(i.data, units).length).map((i) => i.id)), [items, units]);
     const lastPending = pending.length <= 1;
 
@@ -336,8 +330,6 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
             const r = await submitCatalogDrafts(token, [cur.id]);
             if (!r?.success) return say(r?.status === 401 ? "Your login expired. Sign in again and continue." : (r?.message || "Could not add this product. Please try again."));
             const x = (r.results || []).find((y) => y.id === cur.id);
-            const hs = r.hierarchyStats || {};
-            addTally({ category: hs.category?.created, subcategory: hs.subcategory?.created, generic_product: hs.generic_product?.created });
             if (!x) return say("No answer from the server for this product. Please try again.");
             if (x.status === "submitted") return finishItem("submitted", "Product added to the catalog.");
             if (x.status === "duplicate") return finishItem("skipped", "Already in the catalog, so it was skipped.");
@@ -355,7 +347,6 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
     const photoless = results.filter((r) => !r.dup && r.noPhoto).length;
     const noteRows = results.filter((r) => !r.dup && r.notes.length);
     const hasBar = view === "review";
-    const made = tally.category + tally.subcategory + tally.generic_product;
 
     return (
         <div className="gl gbk" ref={root}>
@@ -369,7 +360,7 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
                         <section className="scr">
                             <p className="kick">Bulk upload</p>
                             <h2>Add many products at once</h2>
-                            <p className="sub">One Excel file can hold products from many categories, subcategories and generic products. Names that exist are reused, new ones are created. Everything you add is approved automatically.</p>
+                            <p className="sub">Start from the product name. No category is needed. Products go live right away and wait under “Needs mapping” until you map them to a generic product.</p>
 
                             {items.length > 0 && (
                                 <div className="bk-resume">
@@ -386,7 +377,7 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
                                 <span className="bk-n">1</span>
                                 <div>
                                     <h3>Download the Excel sheet</h3>
-                                    <p>Plain column names, a dropdown for Unit, a tip on every column and 3 example rows. Up to {MAX_ROWS} products per file.</p>
+                                    <p>Plain column names, dropdowns for Unit and GST %, a tip on every column and 3 example rows. Up to {MAX_ROWS} products per file.</p>
                                     <button className="sbtn gh sm" type="button" onClick={getTemplate} disabled={!!busy}>{busy === "template" ? "Preparing…" : "Download Excel sheet (.xlsx)"}</button>
                                 </div>
                             </div>
@@ -418,8 +409,7 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
                                 <div className={dupRows.length ? "skip" : ""}><b>{dupRows.length}</b><small>Left out</small></div>
                             </div>
                             {!parsed.checked && <p className="gx-sum info" style={{ marginTop: 14 }}>Could not compare this file with the catalog right now. Products that already exist are skipped when you submit them.</p>}
-                            {parsed.ignoredImages > 0 && <p className="cap" style={{ marginTop: 10 }}>{plural(parsed.ignoredImages, "image link was", "image links were")} ignored because that category, subcategory or generic product already exists.</p>}
-                            {noteRows.length > 0 && <p className="cap" style={{ marginTop: 6 }}>{plural(noteRows.length, "row has", "rows have")} a note: {noteRows[0].notes[0]}{noteRows.length > 1 ? ` (and ${noteRows.length - 1} more)` : ""}</p>}
+                            {noteRows.length > 0 && <p className="cap" style={{ marginTop: 10 }}>{plural(noteRows.length, "row has", "rows have")} a note: {noteRows[0].notes[0]}{noteRows.length > 1 ? ` (and ${noteRows.length - 1} more)` : ""}</p>}
                             <p className="gx-sum info" style={{ marginTop: 14 }}>
                                 {!keepCount ? "Every product in this file is already in the catalog or repeated, so there is nothing new to continue with."
                                     : checkRows.length ? "All new products continue. You will finish the missing parts on the next screen, one product at a time."
@@ -437,15 +427,12 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
                                 <div className="pn" style={{ marginTop: 16 }}>
                                     <h3 className="bk-h3">What you will need to finish</h3>
                                     <div className="bk-errs">
-                                        {checkRows.slice(0, 40).map((r) => {
-                                            const n = r.fixes.length + r.issues.length;
-                                            return (
-                                                <details key={r.rowNo}>
-                                                    <summary>Row {r.rowNo}{r.data.n ? ` · ${r.data.n}` : ""} <em>{plural(n, "thing", "things")}</em></summary>
-                                                    <ul>{r.fixes.map((e, i) => <li key={`f${i}`}><b>{e.col}:</b> {e.msg}</li>)}{r.issues.map((e, i) => <li key={`i${i}`}>{e.msg}</li>)}</ul>
-                                                </details>
-                                            );
-                                        })}
+                                        {checkRows.slice(0, 40).map((r) => (
+                                            <details key={r.rowNo}>
+                                                <summary>Row {r.rowNo}{r.data.n ? ` · ${r.data.n}` : ""} <em>{plural(r.fixes.length, "thing", "things")}</em></summary>
+                                                <ul>{r.fixes.map((e, i) => <li key={i}><b>{e.col}:</b> {e.msg}</li>)}</ul>
+                                            </details>
+                                        ))}
                                         {checkRows.length > 40 && <p className="cap">…and {checkRows.length - 40} more products.</p>}
                                     </div>
                                 </div>
@@ -488,7 +475,7 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
                                 </div>
                                 <div className="pv" aria-live="polite">
                                     <div className="th" style={cur.data.im?.[0] ? { backgroundImage: `url(${cur.data.im[0]})` } : undefined}>{cur.data.im?.[0] ? "" : (cur.data.n.trim()[0] || "+").toUpperCase()}</div>
-                                    <div><b>{cur.data.n.trim() || "Your product"}</b><small>{[cur.data.b.trim(), [cur.data.cat, cur.data.sub, cur.data.gp].map((x) => x.trim()).filter(Boolean).join(" › ")].filter(Boolean).join(" · ") || "Check the details below"}</small></div>
+                                    <div><b>{cur.data.n.trim() || "Your product"}</b><small>{[cur.data.b.trim(), cur.data.model.trim(), cur.data.gst !== "" ? `GST ${cur.data.gst}%` : ""].filter(Boolean).join(" · ") || "Check the details below"}</small></div>
                                 </div>
                                 <div className={`bk-todo${errors.length ? "" : " ok"}`} role="status" aria-live="polite">
                                     {errors.length ? (<>
@@ -515,7 +502,7 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
                             <p className="sub">
                                 {plural(submittedCount, "product", "products")} added to the catalog
                                 {pending.length ? `, ${pending.length} still waiting. They are saved, so you can finish any time.` : "."}
-                                {made > 0 && ` Newly created: ${plural(tally.category, "category", "categories")}, ${plural(tally.subcategory, "subcategory", "subcategories")}, ${plural(tally.generic_product, "generic product", "generic products")}.`}
+                                {submittedCount > 0 && " They are live and listed under “Needs mapping” until you map them to a generic product."}
                             </p>
                             {pending.length > 0 && <button className="sbtn" type="button" onClick={() => { setCurId(pending[0].id); setShowErr(false); setView("review"); }}>Continue with the rest</button>}
                             {pending.length > 1 && <button className="sbtn gh" type="button" onClick={() => setManager(true)}>Bulk actions</button>}

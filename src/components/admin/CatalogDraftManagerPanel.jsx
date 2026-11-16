@@ -46,7 +46,7 @@ export default function CatalogDraftManagerPanel({ items, getIssues, uploadFn, o
             if (filter === "fix" && !b) return false;
             if (filter === "nophoto" && hasPhoto(i)) return false;
             const d = i.data || {};
-            return !t || `${d.n || ""} ${d.b || ""} ${d.cat || ""} ${d.sub || ""} ${d.gp || ""}`.toLowerCase().includes(t);
+            return !t || `${d.n || ""} ${d.b || ""} ${d.model || ""}`.toLowerCase().includes(t);
         });
     }, [pending, issues, q, filter]);
     const ids = useMemo(() => list.map((i) => i.id), [list]);
@@ -78,7 +78,6 @@ export default function CatalogDraftManagerPanel({ items, getIssues, uploadFn, o
 
     const chips = [["all", "All", counts.all], ["ready", "Ready to submit", counts.ready], ["fix", "Needs fixing", counts.fix], ["nophoto", "No photos", counts.nophoto]];
     const running = stage === "run";
-    const made = result?.created || {};
 
     return createPortal(
         <div className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-900/45 sm:items-center sm:p-4" onClick={() => !running && onClose()}>
@@ -99,7 +98,7 @@ export default function CatalogDraftManagerPanel({ items, getIssues, uploadFn, o
                         <div className="shrink-0 space-y-2 border-b px-5 py-3" style={{ borderColor: C.hairSoft }}>
                             <label className="flex items-center gap-2 rounded-xl border bg-white px-3 py-2" style={{ borderColor: C.hair }}>
                                 <Search className="h-4 w-4 shrink-0" style={{ color: C.muted }} />
-                                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by product, brand or category, e.g. SKF 6205" aria-label="Search products" className="w-full text-[13px] font-medium outline-none" />
+                                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by product, brand or model, e.g. SKF 6205" aria-label="Search products" className="w-full text-[13px] font-medium outline-none" />
                                 {q && <button type="button" onClick={() => setQ("")} aria-label="Clear search"><X className="h-4 w-4" style={{ color: C.muted }} /></button>}
                             </label>
                             <div className="flex gap-1.5 overflow-x-auto">
@@ -127,7 +126,6 @@ export default function CatalogDraftManagerPanel({ items, getIssues, uploadFn, o
                                 const probs = issues.get(i.id) || [];
                                 const d = i.data || {};
                                 const n = d.im?.length || 0;
-                                const path = [d.cat, d.sub, d.gp].filter((x) => x?.trim()).join(" › ");
                                 return (
                                     <div key={i.id} role="presentation" onClick={(e) => sel.toggle(i.id, e)}
                                         className="flex cursor-pointer select-none items-center gap-3 border-b px-5 py-2.5" style={{ borderColor: C.hairSoft, background: on ? `${C.primary}0d` : "#fff" }}>
@@ -138,9 +136,8 @@ export default function CatalogDraftManagerPanel({ items, getIssues, uploadFn, o
                                         <div className="min-w-0 flex-1">
                                             <p className="truncate text-[13px] font-extrabold" style={{ color: C.ink }}>{d.n?.trim() || `Product ${i.row_no ?? ""}`}</p>
                                             <p className="truncate text-[11.5px] font-medium" style={{ color: C.muted }}>
-                                                {d.b?.trim() || "No brand yet"}{i.row_no ? ` · Row ${i.row_no}` : ""} · {n ? `${n} photo${n === 1 ? "" : "s"}` : "No photos"}
+                                                {d.b?.trim() || "No brand yet"}{d.gst !== undefined && d.gst !== "" ? ` · GST ${d.gst}%` : ""}{i.row_no ? ` · Row ${i.row_no}` : ""} · {n ? `${n} photo${n === 1 ? "" : "s"}` : "No photos"}
                                             </p>
-                                            {path && <p className="truncate text-[11px] font-medium" style={{ color: C.muted }}>{path}</p>}
                                             {probs.length > 0 && (
                                                 <p className="mt-0.5 line-clamp-1 text-[11.5px] font-semibold" style={{ color: "#a16207" }}>{probs[0]}{probs.length > 1 ? ` (+${probs.length - 1} more)` : ""}</p>
                                             )}
@@ -213,9 +210,9 @@ export default function CatalogDraftManagerPanel({ items, getIssues, uploadFn, o
                                             </div>
                                         ))}
                                     </div>
-                                    {(made.category || made.subcategory || made.generic_product) > 0 && (
+                                    {result.submitted > 0 && (
                                         <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[12.5px] font-semibold" style={{ color: C.muted }}>
-                                            Newly created: {plural(made.category || 0, "category", "categories")}, {plural(made.subcategory || 0, "subcategory", "subcategories")}, {plural(made.generic_product || 0, "generic product", "generic products")}.
+                                            Added products are live. They appear under “Needs mapping” until you map them to a generic product.
                                         </p>
                                     )}
                                     {result.warnings?.length > 0 && (
@@ -258,7 +255,7 @@ export default function CatalogDraftManagerPanel({ items, getIssues, uploadFn, o
             )}
             {confirm === "submit" && (
                 <BulkConfirmModal title={`Submit ${plural(readyIds.length, "product", "products")}?`} confirmLabel={`Submit ${readyIds.length}`} onConfirm={doSubmit} onClose={() => setConfirm(null)}>
-                    <p>Each product is added to the catalog right away. Missing categories, subcategories and generic products are created from their names.</p>
+                    <p>Each product is added to the catalog right away and stays under “Needs mapping” until you map it to a generic product.</p>
                     {fixCount > 0 && <p><b>{plural(fixCount, "selected product still needs", "selected products still need")} fixing</b> and will be skipped.</p>}
                 </BulkConfirmModal>
             )}
