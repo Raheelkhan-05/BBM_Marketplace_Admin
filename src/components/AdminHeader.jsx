@@ -19,6 +19,7 @@ import {
     FileText,
     X,
     Eraser,
+    Package,
 } from "lucide-react";
 
 import { useAuth } from "../context/AuthContext.jsx";
@@ -66,6 +67,12 @@ export const ADMIN_NAV_ITEMS = [
         label: "S C Banners",
         icon: PictureInPicture2,
         to: "/entity-banners",
+    },
+    {
+        id: "Bulk Products",
+        label: "Bulk Products",
+        icon: Package,
+        to: "/catalog/bulk-upload",
     },
     {
         id: "seller-listings",

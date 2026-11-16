@@ -1,5 +1,6 @@
 // components/admin/BulkPhotoModal.jsx
-// Upload up to 5 photos once, then apply them to many products. Parent supplies onApply(images, mode, onProgress).
+// Upload up to `max` photos once, then apply them to many products. Parent supplies onApply(images, mode, onProgress).
+// Seller screens keep using uploadToken. Admin catalog screens pass uploadFn(file) -> { success, url }.
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X, Loader2, ImagePlus, Star } from "lucide-react";
@@ -8,10 +9,9 @@ import { uploadSellerFile } from "../../utils/api.js";
 import { useDrop } from "../grow/growUi.js";
 import { useModalLock } from "./bulkSelect.jsx";
 
-const MAX = 5;
 const isImg = (f) => !!f.type?.startsWith("image/");
 
-export default function BulkPhotoModal({ count, noun = "product", uploadToken, allowMode = true, onApply, onClose, say }) {
+export default function BulkPhotoModal({ count, noun = "product", uploadToken, uploadFn, max = 5, allowMode = true, onApply, onClose, say }) {
     useModalLock();
     const [images, setImages] = useState([]);
     const [up, setUp] = useState(false);
@@ -26,16 +26,16 @@ export default function BulkPhotoModal({ count, noun = "product", uploadToken, a
         if (up || busy) return;
         const imgs = Array.from(files || []).filter(isImg);
         if (!imgs.length) { setErr("Please choose image files (JPG, PNG, etc.)."); return; }
-        const room = MAX - images.length;
-        if (room <= 0) { setErr(`You can add up to ${MAX} photos.`); return; }
+        const room = max - images.length;
+        if (room <= 0) { setErr(`You can add up to ${max} photos.`); return; }
         if (imgs.length > room) say?.(`Only ${room} more photo${room === 1 ? "" : "s"} fit. Extra files were skipped.`);
         setErr("");
         setUp(true);
         try {
             for (const f of imgs.slice(0, room)) {
-                const r = await uploadSellerFile(uploadToken, f, "listings");
+                const r = uploadFn ? await uploadFn(f) : await uploadSellerFile(uploadToken, f, "listings");
                 if (!alive.current) return;
-                if (r?.success && r.url) setImages((x) => [...x, r.url].slice(0, MAX));
+                if (r?.success && r.url) setImages((x) => [...x, r.url].slice(0, max));
                 else setErr("A photo failed to upload. Please try again.");
             }
         } finally { if (alive.current) setUp(false); }
@@ -82,13 +82,13 @@ export default function BulkPhotoModal({ count, noun = "product", uploadToken, a
                         ))}
                     </div>
 
-                    {images.length < MAX && (
+                    {images.length < max && (
                         <label {...drop.bind}
                             className={`${images.length ? "mt-3" : ""} flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed px-4 py-6 text-center text-[12.5px] font-semibold transition-colors ${up ? "opacity-60" : ""}`}
                             style={{ borderColor: drop.active ? C.primary : C.hair, background: drop.active ? `${C.primary}0d` : "#fafbfb", color: C.muted }}>
                             {up ? <Loader2 className="h-5 w-5 animate-spin" /> : <ImagePlus className="h-5 w-5" />}
                             <span>{up ? "Uploading…" : <>Drag and drop photos here or <b style={{ color: C.ink }}>browse</b></>}</span>
-                            <em className="text-[11px] not-italic">Up to {MAX} photos · JPG, PNG</em>
+                            <em className="text-[11px] not-italic">Up to {max} photos · JPG, PNG</em>
                             <input type="file" accept="image/*" multiple hidden disabled={up || busy} onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
                         </label>
                     )}
@@ -97,7 +97,7 @@ export default function BulkPhotoModal({ count, noun = "product", uploadToken, a
                         <fieldset className="mt-4" disabled={busy}>
                             <legend className="text-[12px] font-bold" style={{ color: C.muted }}>If a product already has photos</legend>
                             <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
-                                {[["add", "Add to its photos", `Keeps existing photos, up to ${MAX} in total`], ["replace", "Replace its photos", "Removes existing photos first"]].map(([k, t, s]) => (
+                                {[["add", "Add to its photos", `Keeps existing photos, up to ${max} in total`], ["replace", "Replace its photos", "Removes existing photos first"]].map(([k, t, s]) => (
                                     <button key={k} type="button" role="radio" aria-checked={mode === k} onClick={() => setMode(k)}
                                         className="rounded-xl border px-3 py-2.5 text-left transition-colors"
                                         style={{ borderColor: mode === k ? C.primary : C.hair, background: mode === k ? `${C.primary}0d` : "#fff" }}>
