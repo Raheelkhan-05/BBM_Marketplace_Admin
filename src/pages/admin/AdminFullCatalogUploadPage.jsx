@@ -27,21 +27,6 @@ export default function AdminFullCatalogUploadPage() {
         <main className="mx-auto min-h-screen w-full max-w-screen-2xl min-w-0 px-3 pb-24 pt-3 sm:px-5 md:px-6 lg:px-8">
             <style>{`.adm-embed .bar{position:sticky;bottom:0;left:auto;right:auto;width:100%}`}</style>
 
-            <button onClick={() => navigate("/catalog")}
-                className="mb-4 inline-flex items-center gap-1.5 text-[13px] font-bold transition-colors hover:opacity-80" style={{ color: C.muted }}>
-                <ArrowLeft className="h-4 w-4" /> Back to catalog
-            </button>
-
-            <div className="flex min-w-0 items-start gap-3 sm:items-center">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl" style={{ background: C.hairSoft, color: C.ink }}><Layers className="h-5 w-5" /></span>
-                <div className="min-w-0">
-                    <h1 className="text-[clamp(1.25rem,2.5vw,1.75rem)] font-extrabold tracking-tight" style={{ color: C.ink }}>Bulk upload: Products</h1>
-                    <p className="mt-1 max-w-2xl text-[13px] font-medium leading-relaxed sm:text-[14px]" style={{ color: C.muted }}>
-                        Add many products in one file. Start from the product name. Products go live right away and wait under “Needs mapping” until you map them to a heirarchy.
-                    </p>
-                </div>
-            </div>
-
             <div className="adm-embed mt-4">
                 <AdminCatalogBulkUpload token={token} say={say} onExit={() => navigate("/catalog")} />
             </div>
