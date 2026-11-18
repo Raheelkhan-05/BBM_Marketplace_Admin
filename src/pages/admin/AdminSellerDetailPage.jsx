@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Loader2, CheckCircle2, XCircle, ArrowLeft, Save, Award, FileText, ShieldCheck } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, ArrowLeft, Save, Award, FileText, ShieldCheck, Upload } from "lucide-react";
 import { Image as ImageIcon, X as XIcon } from "lucide-react";
 import { useAuth } from "../../context/AuthContext.jsx";
-import { adminGetSeller, adminUpdateSeller, adminApproveSeller, adminRejectSeller } from "../../utils/api.js";
+import { adminGetSeller, adminUpdateSeller, adminApproveSeller, adminRejectSeller, uploadSellerFile } from "../../utils/api.js";
 
 
 const SECTIONS = [
@@ -32,9 +32,11 @@ export default function AdminSellerDetailPage() {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
-
-  // inside the component, after the state hooks:
   const [business, setBusiness] = useState(null);
+
+  const [logoBusy, setLogoBusy] = useState(false);
+  const [logoError, setLogoError] = useState("");
+  const logoInputRef = useRef(null);
 
   useEffect(() => {
     if (!token) return;
@@ -48,17 +50,6 @@ export default function AdminSellerDetailPage() {
     });
   }, [id, token]);
 
-  useEffect(() => {
-    if (!token) return;
-    adminGetSeller(token, id).then((res) => {
-      if (res?.success) {
-        setSeller(res.seller); setForm(res.seller);
-        setPhotos(res.photos); setCertifications(res.certifications); setProducts(res.products || []);
-      }
-      setLoading(false);
-    });
-  }, [id, token]);
-
   const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const handleSave = async () => {
@@ -67,6 +58,47 @@ export default function AdminSellerDetailPage() {
     if (res?.success) setSeller(res.seller);
     setSaving(false);
   };
+
+  // Upload a new logo (or replace the existing one) and save it straight away.
+  const handleLogoPick = async (file) => {
+    if (!file) return;
+    setLogoError("");
+    if (!file.type?.startsWith("image/")) { setLogoError("Please choose an image file."); return; }
+    if (file.size > 5 * 1024 * 1024) { setLogoError("Image must be under 5 MB."); return; }
+
+    setLogoBusy(true);
+    try {
+      const up = await uploadSellerFile(token, file, "logo");
+      if (!up?.success || !up.url) { setLogoError(up?.message || "Logo upload failed. Try again."); return; }
+      const res = await adminUpdateSeller(token, id, { logo_url: up.url });
+      if (res?.success) {
+        setSeller(res.seller);
+        setForm((f) => ({ ...f, logo_url: res.seller.logo_url }));
+      } else {
+        setLogoError(res?.message || "Uploaded, but could not save the logo.");
+      }
+    } catch {
+      setLogoError("Logo upload failed. Try again.");
+    } finally {
+      setLogoBusy(false);
+    }
+  };
+
+  const handleLogoRemove = async () => {
+    if (!seller?.logo_url) return;
+    if (!window.confirm("Remove this seller's logo?")) return;
+    setLogoError("");
+    setLogoBusy(true);
+    const res = await adminUpdateSeller(token, id, { logo_url: null });
+    if (res?.success) {
+      setSeller(res.seller);
+      setForm((f) => ({ ...f, logo_url: null }));
+    } else {
+      setLogoError(res?.message || "Could not remove the logo.");
+    }
+    setLogoBusy(false);
+  };
+
   const handleApprove = async () => {
     setActionLoading(true);
     const res = await adminApproveSeller(token, id);
@@ -101,6 +133,22 @@ export default function AdminSellerDetailPage() {
         </button>
         <div>
           <h1 className="text-[20px] font-extrabold text-slate-900">{seller.display_name}</h1>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => logoInputRef.current?.click()} disabled={logoBusy}
+              className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1 text-[11.5px] font-bold text-[#047084] disabled:opacity-50">
+              {logoBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+              {seller.logo_url ? "Replace logo" : "Upload logo"}
+            </button>
+            {seller.logo_url && (
+              <button type="button" onClick={handleLogoRemove} disabled={logoBusy}
+                className="rounded-md border border-[#c71f11]/30 px-2.5 py-1 text-[11.5px] font-bold text-[#c71f11] disabled:opacity-50">
+                Remove
+              </button>
+            )}
+            <input ref={logoInputRef} type="file" accept="image/*" hidden
+              onChange={(e) => { handleLogoPick(e.target.files?.[0]); e.target.value = ""; }} />
+          </div>
+          {logoError && <p className="mt-1 text-[11.5px] font-semibold text-[#c71f11]">{logoError}</p>}
         </div>
       </div>
 
