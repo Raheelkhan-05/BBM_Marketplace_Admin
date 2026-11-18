@@ -1,25 +1,29 @@
 // components/admin/CatalogDraftManagerPanel.jsx
-// Pick many unfinished catalog products, then add photos, remove them, or submit the ready ones in one go.
+// Pick many unfinished catalog products, then add photos, generate AI images (only for products with no photo),
+// remove them, or submit the ready ones in one go.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Search, ImagePlus, Trash2, Send, Loader2, CheckCircle2 } from "lucide-react";
+import { X, Search, ImagePlus, Trash2, Send, Loader2, CheckCircle2, Sparkles } from "lucide-react";
 import { C } from "../catalog/tokens";
 import { Checkbox, SelectAllRow, useSelection, useModalLock } from "./bulkSelect.jsx";
 import BulkPhotoModal from "./BulkPhotoModal.jsx";
 import BulkConfirmModal from "./BulkConfirmModal.jsx";
 import { MAX_PHOTOS } from "../../utils/catalogBulkSchema.js";
+import { isActiveJob } from "../../utils/useCatalogImageJobs.js";
 
 const EMPTY = new Map();
 const plural = (n, a, b) => `${n} ${n === 1 ? a : b}`;
 const hasPhoto = (i) => !!i.data?.im?.length;
+const hasName = (i) => String(i.data?.n || "").trim().length >= 2 && !!String(i.data?.b || "").trim();
 
-export default function CatalogDraftManagerPanel({ items, getIssues, uploadFn, onApplyPhotos, onRemove, onSubmit, onClose, say }) {
+// ai = { jobs: Map(draftId -> job), onGenerate(ids, { useReference }) -> Promise<{ success }> }
+export default function CatalogDraftManagerPanel({ items, getIssues, uploadFn, onApplyPhotos, onRemove, onSubmit, onClose, say, ai }) {
     useModalLock();
     const [stage, setStage] = useState("pick"); // pick | run | result
     const [q, setQ] = useState("");
     const [filter, setFilter] = useState("all");
     const [photoOpen, setPhotoOpen] = useState(false);
-    const [confirm, setConfirm] = useState(null); // "remove" | "submit"
+    const [confirm, setConfirm] = useState(null); // "remove" | "submit" | "ai"
     const [busy, setBusy] = useState(false);
     const [prog, setProg] = useState({ done: 0, total: 0 });
     const [result, setResult] = useState(null);
@@ -27,16 +31,22 @@ export default function CatalogDraftManagerPanel({ items, getIssues, uploadFn, o
     const alive = useRef(true);
     useEffect(() => () => { alive.current = false; }, []);
 
+    const jobs = ai?.jobs || EMPTY;
     const pending = useMemo(() => items.filter((i) => i.status === "pending"), [items]);
+    const byId = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
     // only computed while picking, so a running submit (which changes `items` often) stays cheap
     const issues = useMemo(() => (stage === "pick" ? getIssues(items) : EMPTY), [stage, items, getIssues]);
     const bad = (i) => !!issues.get(i.id)?.length;
 
     const counts = useMemo(() => {
-        let fix = 0, nophoto = 0;
-        for (const i of pending) { if (issues.get(i.id)?.length) fix += 1; if (!hasPhoto(i)) nophoto += 1; }
-        return { all: pending.length, ready: pending.length - fix, fix, nophoto };
-    }, [pending, issues]);
+        let fix = 0, nophoto = 0, gen = 0;
+        for (const i of pending) {
+            if (issues.get(i.id)?.length) fix += 1;
+            if (!hasPhoto(i)) nophoto += 1;
+            if (isActiveJob(jobs.get(i.id))) gen += 1;
+        }
+        return { all: pending.length, ready: pending.length - fix, fix, nophoto, gen };
+    }, [pending, issues, jobs]);
 
     const list = useMemo(() => {
         const t = q.trim().toLowerCase();
@@ -45,16 +55,30 @@ export default function CatalogDraftManagerPanel({ items, getIssues, uploadFn, o
             if (filter === "ready" && b) return false;
             if (filter === "fix" && !b) return false;
             if (filter === "nophoto" && hasPhoto(i)) return false;
+            if (filter === "ai" && !isActiveJob(jobs.get(i.id))) return false;
             const d = i.data || {};
             return !t || `${d.n || ""} ${d.b || ""} ${d.model || ""}`.toLowerCase().includes(t);
         });
-    }, [pending, issues, q, filter]);
+    }, [pending, issues, q, filter, jobs]);
     const ids = useMemo(() => list.map((i) => i.id), [list]);
     const sel = useSelection(ids);
 
     const selIds = [...sel.selected];
     const readyIds = selIds.filter((id) => !issues.get(id)?.length);
     const fixCount = selIds.length - readyIds.length;
+    const genSelected = selIds.filter((id) => isActiveJob(jobs.get(id))).length;
+
+    // AI is only for products that have no photo yet, a name and a brand, and are not already generating
+    const aiPool = selIds.map((id) => byId.get(id)).filter((it) => it && it.status === "pending" && !hasPhoto(it) && hasName(it) && !isActiveJob(jobs.get(it.id)));
+    const aiSkipped = selIds.length - aiPool.length;
+
+    const doGenerate = async () => {
+        setBusy(true);
+        const r = await ai.onGenerate(aiPool.map((it) => it.id), { useReference: false });
+        if (!alive.current) return;
+        setBusy(false); setConfirm(null);
+        if (r?.success) sel.clear();
+    };
 
     const doRemove = async () => {
         setBusy(true);
@@ -76,7 +100,7 @@ export default function CatalogDraftManagerPanel({ items, getIssues, uploadFn, o
         setResult(r); setStage("result"); sel.clear();
     };
 
-    const chips = [["all", "All", counts.all], ["ready", "Ready to submit", counts.ready], ["fix", "Needs fixing", counts.fix], ["nophoto", "No photos", counts.nophoto]];
+    const chips = [["all", "All", counts.all], ["ready", "Ready to submit", counts.ready], ["fix", "Needs fixing", counts.fix], ["nophoto", "No photos", counts.nophoto], ["ai", "Generating", counts.gen]];
     const running = stage === "run";
 
     return createPortal(
@@ -87,7 +111,7 @@ export default function CatalogDraftManagerPanel({ items, getIssues, uploadFn, o
                     <div className="min-w-0">
                         <h3 className="text-[16px] font-extrabold" style={{ color: C.ink }}>Manage unfinished products</h3>
                         <p className="mt-0.5 text-[12px] font-medium" style={{ color: C.muted }}>
-                            {stage === "pick" ? "Tick products to add photos, remove them, or submit the ready ones. Hold Shift to select a range." : stage === "run" ? "Submitting. Please keep this window open." : "Submit finished."}
+                            {stage === "pick" ? "Tick products to add photos, generate images with AI, remove them, or submit the ready ones. Hold Shift to select a range." : stage === "run" ? "Submitting. Please keep this window open." : "Submit finished."}
                         </p>
                     </div>
                     <button type="button" onClick={onClose} disabled={running} aria-label="Close" className="shrink-0 rounded-full p-1.5 disabled:opacity-40" style={{ color: C.muted }}><X className="h-4 w-4" /></button>
@@ -115,6 +139,11 @@ export default function CatalogDraftManagerPanel({ items, getIssues, uploadFn, o
                                             Select all ready
                                         </button>
                                     )}
+                                    {counts.nophoto > 0 && (
+                                        <button type="button" onClick={() => sel.setMany(list.filter((i) => !hasPhoto(i)).map((i) => i.id))} className="text-[12px] font-bold underline underline-offset-2" style={{ color: C.primary }}>
+                                            Select all without photos
+                                        </button>
+                                    )}
                                 </SelectAllRow>
                             )}
                         </div>
@@ -126,6 +155,7 @@ export default function CatalogDraftManagerPanel({ items, getIssues, uploadFn, o
                                 const probs = issues.get(i.id) || [];
                                 const d = i.data || {};
                                 const n = d.im?.length || 0;
+                                const job = jobs.get(i.id);
                                 return (
                                     <div key={i.id} role="presentation" onClick={(e) => sel.toggle(i.id, e)}
                                         className="flex cursor-pointer select-none items-center gap-3 border-b px-5 py-2.5" style={{ borderColor: C.hairSoft, background: on ? `${C.primary}0d` : "#fff" }}>
@@ -138,7 +168,15 @@ export default function CatalogDraftManagerPanel({ items, getIssues, uploadFn, o
                                             <p className="truncate text-[11.5px] font-medium" style={{ color: C.muted }}>
                                                 {d.b?.trim() || "No brand yet"}{d.gst !== undefined && d.gst !== "" ? ` · GST ${d.gst}%` : ""}{i.row_no ? ` · Row ${i.row_no}` : ""} · {n ? `${n} photo${n === 1 ? "" : "s"}` : "No photos"}
                                             </p>
-                                            {probs.length > 0 && (
+                                            {isActiveJob(job) && (
+                                                <p className="mt-0.5 flex items-center gap-1 text-[11.5px] font-bold" style={{ color: C.primary }}>
+                                                    <Loader2 className="h-3 w-3 animate-spin" />{job.status === "running" ? "Creating image…" : job.attempts > 0 ? "Trying again…" : "Waiting to create image"}
+                                                </p>
+                                            )}
+                                            {job?.status === "failed" && (
+                                                <p className="mt-0.5 line-clamp-1 text-[11.5px] font-semibold text-red-700">Image failed: {job.error || "please try again"}</p>
+                                            )}
+                                            {!isActiveJob(job) && probs.length > 0 && (
                                                 <p className="mt-0.5 line-clamp-1 text-[11.5px] font-semibold" style={{ color: "#a16207" }}>{probs[0]}{probs.length > 1 ? ` (+${probs.length - 1} more)` : ""}</p>
                                             )}
                                         </div>
@@ -160,6 +198,11 @@ export default function CatalogDraftManagerPanel({ items, getIssues, uploadFn, o
                                 <button type="button" disabled={!sel.count} onClick={() => setPhotoOpen(true)}
                                     className="flex min-h-10 items-center gap-1.5 rounded-xl border px-4 text-[13px] font-bold disabled:opacity-50" style={{ borderColor: C.hair, color: C.ink }}>
                                     <ImagePlus className="h-4 w-4" />Add photos
+                                </button>
+                                <button type="button" disabled={!aiPool.length} onClick={() => setConfirm("ai")}
+                                    title={sel.count && !aiPool.length ? "AI images are only made for selected products that have no photo yet, have a name and brand, and are not already generating." : undefined}
+                                    className="flex min-h-10 items-center gap-1.5 rounded-xl border px-4 text-[13px] font-bold disabled:opacity-50" style={{ borderColor: C.primary, color: C.primary }}>
+                                    <Sparkles className="h-4 w-4" />Generate images{aiPool.length ? ` ${aiPool.length}` : ""}
                                 </button>
                                 <button type="button" disabled={!sel.count} onClick={() => setConfirm("remove")}
                                     className="flex min-h-10 items-center gap-1.5 rounded-xl border px-4 text-[13px] font-bold text-red-700 disabled:opacity-50" style={{ borderColor: "#fecaca" }}>
@@ -247,6 +290,13 @@ export default function CatalogDraftManagerPanel({ items, getIssues, uploadFn, o
                     onApply={(images, mode, p) => onApplyPhotos(selIds, images, mode, p)} onClose={() => setPhotoOpen(false)} say={say} />
             )}
 
+            {confirm === "ai" && ai && (
+                <BulkConfirmModal title={`Generate images for ${plural(aiPool.length, "product", "products")}?`} confirmLabel={`Generate ${aiPool.length}`} busy={busy} onConfirm={doGenerate} onClose={() => setConfirm(null)}>
+                    <p>AI draws each product on a white background in the standard 3:4 shape. Several are made at the same time. They keep running on our server, so you can close this window or even leave the page.</p>
+                    {aiSkipped > 0 && <p>{plural(aiSkipped, "selected product is", "selected products are")} skipped because {aiSkipped === 1 ? "it already has" : "they already have"} a photo, {aiSkipped === 1 ? "is" : "are"} missing a name or brand, or {aiSkipped === 1 ? "is" : "are"} already being made.</p>}
+                    <p><b>Please check each result.</b> A drawing made from the name alone can get label details wrong.</p>
+                </BulkConfirmModal>
+            )}
             {confirm === "remove" && (
                 <BulkConfirmModal danger title={`Remove ${plural(sel.count, "product", "products")} from this upload?`} confirmLabel={`Remove ${sel.count}`} busy={busy} onConfirm={doRemove} onClose={() => setConfirm(null)}>
                     <p>They are deleted from your unfinished products. This cannot be undone.</p>
@@ -257,6 +307,7 @@ export default function CatalogDraftManagerPanel({ items, getIssues, uploadFn, o
                 <BulkConfirmModal title={`Submit ${plural(readyIds.length, "product", "products")}?`} confirmLabel={`Submit ${readyIds.length}`} onConfirm={doSubmit} onClose={() => setConfirm(null)}>
                     <p>Each product is added to the catalog right away and stays under “Needs mapping” until you map it to a generic product.</p>
                     {fixCount > 0 && <p><b>{plural(fixCount, "selected product still needs", "selected products still need")} fixing</b> and will be skipped.</p>}
+                    {genSelected > 0 && <p><b>{plural(genSelected, "selected product is", "selected products are")} still creating an image.</b> Those without a photo yet are skipped. Wait for the image first.</p>}
                 </BulkConfirmModal>
             )}
         </div>,

@@ -1,0 +1,49 @@
+3572d1a | Raheelkhan-05 | 2026-11-16 | Fix photo upload failing in admin catalog bulk upload
+6623a54 | Raheelkhan-05 | 2026-11-16 | Fix photo upload failing in admin catalog bulk upload
+ebc86e0 | Raheelkhan-05 | 2026-11-16 | Updated the UI UX
+0f9d5ed | Raheelkhan-05 | 2026-11-16 | Simplify admin catalog bulk upload: product-first flow with GST
+0462bba | Raheelkhan-05 | 2026-11-16 | Admin catalog bulk upload: add many products at once, review each on screen, then submit
+5dc975f | Raheelkhan-05 | 2026-11-05 | Update terminology regarding GSTs
+fee9cf5 | Raheelkhan-05 | 2026-11-05 | fix: resolve Image Studio background removal memory issues
+9627a08 | Raheelkhan-05 | 2026-11-05 | Added the missing imports and navs
+844e139 | Raheelkhan-05 | 2026-11-05 | fix(build): stop PWA from precaching the AI model runtime
+e646992 | Raheelkhan-05 | 2026-11-05 | Added the missing imports and navs
+32469cb | Raheelkhan-05 | 2026-11-05 | feat(admin): add Image Studio for white-background product images
+155f46b | Raheelkhan-05 | 2026-10-30 | Enhance the store URLs
+af890ea | Raheelkhan-05 | 2026-10-29 | feat(ai-banners): per-size coverage, fill missing sizes, selective regenerate
+6ed3c1c | Raheelkhan-05 | 2026-10-28 | Add AI-Powered Banner Generation to Admin Panel
+f0a13b6 | Raheelkhan-05 | 2026-10-28 | feat(home): smarter banner placement + multi-size images for groups, categories & subcategories
+d6e9176 | Raheelkhan-05 | 2026-10-27 | UI Enhancement
+51d80b6 | Raheelkhan-05 | 2026-10-27 | UI Enhancement
+425f4fa | Raheelkhan-05 | 2026-10-27 | fix(admin): single select-all checkbox, fix uuid error on select-all
+3d0d18a | Raheelkhan-05 | 2026-10-27 | fix(admin): single select-all checkbox, fix uuid error on select-all
+c580eaf | Raheelkhan-05 | 2026-10-27 | feat(admin): paginated submissions list with total count and select-all
+98d9496 | Raheelkhan-05 | 2026-10-26 | feat(home): admin-managed banners for product groups on the Home page
+b32efaa | Raheelkhan-05 | 2026-10-23 | feat(admin): map waiting (staged) products to a generic product before the seller goes live
+cf8e88d | Raheelkhan-05 | 2026-10-23 | feat(admin): bulk draft manager, one-click bulk submit and soft-delete of live listings
+a675d09 | Raheelkhan-05 | 2026-10-23 | fix: position hierarchy suggestions above input when viewport space is limited
+45e179a | Raheelkhan-05 | 2026-10-23 | Enhanced the UI UX
+aa8bfe7 | Raheelkhan-05 | 2026-10-23 | Add bulk photo upload and bulk category mapping for admin listings
+183ca61 | Raheelkhan-05 | 2026-10-22 | Enhanced the UI UX
+b2bab35 | Raheelkhan-05 | 2026-10-22 | feat(admin): let admins add and manage seller products by GSTIN
+6002e5f | Raheelkhan-05 | 2026-10-16 | Routing Communications fix
+b56dafd | Raheelkhan-05 | 2026-10-16 | Routing Communications fix
+f0d343b | Raheelkhan-05 | 2026-10-16 | feat: add GSTIN conflict reporting and admin resolution
+aebed7a | Raheelkhan-05 | 2026-10-15 | feat: improve responsive admin finance dashboard
+545afee | Raheelkhan-05 | 2026-10-15 | feat: add admin finance and transaction monitoring dashboard
+40998a6 | Raheelkhan-05 | 2026-10-03 | Fixed Routing Issue
+265d490 | Raheelkhan-05 | 2026-10-03 | Added option for the rfq accessing in header
+1703b78 | Raheelkhan-05 | 2026-10-03 | Added option for the rfq accessing in header
+1539246 | Raheelkhan-05 | 2026-10-03 | Added option for the rfq accessing in header
+9bbf30b | Raheelkhan-05 | 2026-10-03 | Fixed Routing Issue
+0c045c7 | Raheelkhan-05 | 2026-10-03 | feat: add RFQ (Request for Quotation) module
+b3b81b7 | Raheelkhan-05 | 2026-10-01 | fix(ui): stop image viewer crashing when opened outside the main page layout
+04a27ed | Raheelkhan-05 | 2026-10-01 | feat(orders): auto-reject orders the seller doesn't accept within 24 hours and refund the buyer
+d7db8be | Raheelkhan-05 | 2026-10-01 | feat(orders): add order cancellation reasons, 48-hour dispute window and held seller payouts
+faf2f0b | Raheelkhan-05 | 2026-09-17 | Fixed the routing issue
+b96879c | Raheelkhan-05 | 2026-09-17 | - Separated admin and normal user profile fetching - Fixed admin login page importing wrong auth component - getMe now only checks user accounts, getMeAdmin only checks admin accounts - Added role-scoped queries so shared phone/email across roles resolves correctly
+da79502 | Raheelkhan-05 | 2026-09-17 | fix(auth): resolve login ambiguity and profile-fetch reliability issues
+2538367 | Raheelkhan-05 | 2026-09-17 | feat(admin): add Brands management to catalog review page
+6272578 | Raheelkhan-05 | 2026-09-16 | Redirect fix after login
+f299f59 | Raheelkhan-05 | 2026-09-16 | fix: cascade soft-deletes to brand items; correct Home Page category filtering
+29f2a9c | Raheelkhan-05 | 2026-09-16 | Separated the Admin Panel

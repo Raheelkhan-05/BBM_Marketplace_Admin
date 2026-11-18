@@ -24,6 +24,7 @@ const B = "/admin/catalog-bulk";
 const CHUNK = 25;
 const IMG_CHUNK = 150;
 const DEL_CHUNK = 150;
+const AI_CHUNK = 150;
 const UPLOAD_FOLDER = "catalog";
 
 async function call(path, token, { method = "GET", body, keepalive = false } = {}) {
@@ -99,6 +100,27 @@ export async function bulkCatalogDraftDelete(token, ids, onProgress) {
 
 // ids: max 50 per call. Server adds the products and removes the finished drafts.
 export const submitCatalogDrafts = (token, ids) => call(`${B}/drafts/submit`, token, { method: "POST", body: { ids } });
+
+/* ---------------------------------- AI product images (background queue) ---------------------------------- */
+
+// Queues many products. Sent in batches; { queued, skipped } are totals. Safe to close the page afterwards.
+export async function enqueueCatalogImages(token, ids, { useReference = true } = {}) {
+    let queued = 0, skipped = 0;
+    for (let i = 0; i < ids.length; i += AI_CHUNK) {
+        const r = await call(`${B}/ai-images/enqueue`, token, { method: "POST", body: { ids: ids.slice(i, i + AI_CHUNK), useReference } });
+        if (!r?.success) {
+            const done = queued ? ` ${queued} product${queued === 1 ? " was" : "s were"} already queued.` : "";
+            return { success: false, queued, skipped, message: `${r?.message || "Could not start image generation."}${done}` };
+        }
+        queued += r.queued || 0; skipped += r.skipped || 0;
+    }
+    return { success: true, queued, skipped };
+}
+export const fetchCatalogImageJobs = (token) => call(`${B}/ai-images/jobs`, token);
+export const ackCatalogImages = (token, ids) => call(`${B}/ai-images/ack`, token, { method: "POST", body: { ids } });
+// { ids } stop these (and with failed:true also clear their failed state) | { all:true } stop everything
+// | { all:true, failed:true, active:false } clear every failed one only
+export const cancelCatalogImages = (token, opts = {}) => call(`${B}/ai-images/cancel`, token, { method: "POST", body: opts });
 
 // Image upload for admins. Always resolves to { success, url?, message? }.
 // Calls POST /admin/catalog/upload (multer field "file") directly, so no other import is needed.

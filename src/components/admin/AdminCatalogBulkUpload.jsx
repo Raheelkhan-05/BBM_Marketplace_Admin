@@ -4,15 +4,18 @@
 //   3. review one product at a time (or use Bulk actions)   4. "Confirm and next" adds that product to the catalog
 // Products are added live but UNMAPPED. They appear under "Needs mapping" until an admin maps them to a generic product.
 // Unfinished products are saved on the server per admin (admin_catalog_drafts), so the admin can leave and come back.
+// Photos: upload by hand, or let AI make them for products that have none (server-side queue, keeps running if the page is closed).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     fetchCatalogBulkMeta, checkCatalogRows, fetchCatalogDrafts, saveCatalogDrafts, patchCatalogDraft, deleteCatalogDraft,
     clearCatalogDrafts, bulkCatalogDraftImages, bulkCatalogDraftDelete, submitCatalogDrafts, uploadCatalogImage,
 } from "../../utils/api.adminCatalogBulk.js";
-import { MAX_ROWS, rowToData, parseRows, validateData, quickIssues, itemKey } from "../../utils/catalogBulkSchema.js";
+import { MAX_ROWS, MAX_PHOTOS, rowToData, parseRows, validateData, quickIssues, itemKey } from "../../utils/catalogBulkSchema.js";
 import { downloadCatalogTemplate, readCatalogSheet } from "../../utils/catalogBulkExcel.js";
+import useCatalogImageJobs from "../../utils/useCatalogImageJobs.js";
 import CatalogItemForm from "./CatalogItemForm.jsx";
 import CatalogDraftManagerPanel from "./CatalogDraftManagerPanel.jsx";
+import CatalogAiStatusBar from "./CatalogAiStatusBar.jsx";
 import GrowCheckSkeleton from "../grow/GrowCheckSkeleton.jsx";
 import { useDrop, useDropGuard } from "../grow/growUi.js";
 import "../grow/grow-start.css";
@@ -54,6 +57,7 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
     const [loadError, setLoadError] = useState(null);
     const [manager, setManager] = useState(false);
     const [chk, setChk] = useState(null);          // catalog check for the product on screen: { dup }
+    const [autoAi, setAutoAi] = useState(false);   // summary screen: generate images for products without a photo
     const root = useRef(null);
     const itemsRef = useRef(items);
     itemsRef.current = items;
@@ -104,6 +108,31 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
         window.addEventListener("pagehide", gone);
         return () => { document.removeEventListener("visibilitychange", hide); window.removeEventListener("pagehide", gone); flush(); };
     }, [flush]);
+
+    /* ---------- AI images: finished images from the server queue are attached to their drafts ---------- */
+    // The server never edits a draft itself (that would race with autosave). The screen adds the image, saves it,
+    // then tells the server it is done. Safe to run twice: an image that is already attached is not added again.
+    const applyGenerated = useCallback(async (results) => {
+        const byId = new Map(itemsRef.current.map((i) => [i.id, i]));
+        const changes = new Map();
+        results.forEach(({ draftId, url }) => {
+            const it = byId.get(draftId);
+            if (!it || it.status !== "pending") return;
+            const im = it.data?.im || [];
+            if (im.includes(url) || im.length >= MAX_PHOTOS) return;
+            changes.set(draftId, { ...it.data, im: [...im, url] });
+        });
+        if (changes.size) {
+            itemsRef.current = itemsRef.current.map((i) => (changes.has(i.id) ? { ...i, data: changes.get(i.id) } : i));
+            setItems((l) => l.map((i) => (changes.has(i.id) ? { ...i, data: changes.get(i.id) } : i)));
+            changes.forEach((data, id) => dirty.current.set(id, data));
+            setSaveState("saving");
+        }
+        const ok = await flush();
+        return { ok, added: changes.size };
+    }, [flush]);
+
+    const ai = useCatalogImageJobs({ token, enabled: view !== "load" && !loadError, onReady: applyGenerated, say });
 
     /* ---------- problems per product (same rules as the single "Confirm" button, minus the catalog lookup) ---------- */
     const getIssues = useCallback((list) => {
@@ -258,10 +287,19 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
         setParsed(null); setShowErr(false);
         setCurId(r.items[0]?.id || null);
         setView(r.items.length ? "review" : "intro");
+
+        // optional: start AI images for every new product that has no photo. It runs in the background.
+        if (autoAi) {
+            const need = r.items
+                .filter((i) => !i.data?.im?.length && String(i.data?.n || "").trim().length >= 2 && String(i.data?.b || "").trim())
+                .map((i) => i.id);
+            if (need.length) ai.enqueue(need, { useReference: false });
+        }
     };
 
     /* ---------- review ---------- */
     const cur = items.find((i) => i.id === curId) || null;
+    const curJob = cur ? ai.jobs.get(cur.id) || null : null;
     const pending = items.filter((i) => i.status === "pending");
     const noPhoto = pending.filter((i) => !i.data?.im?.length).length;
     const submittedCount = items.filter((i) => i.status === "submitted").length;
@@ -348,6 +386,11 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
     const noteRows = results.filter((r) => !r.dup && r.notes.length);
     const hasBar = view === "review";
 
+    const aiBar = (
+        <CatalogAiStatusBar active={ai.active} failed={ai.failedCount} stats={ai.stats}
+            onStop={ai.stopAll} onRetryFailed={ai.retryFailed} onDismissFailed={ai.dismissFailed} />
+    );
+
     return (
         <div className="gl gbk" ref={root}>
             <div className="gs">
@@ -361,6 +404,8 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
                             <p className="kick">Bulk upload</p>
                             <h2>Add many products at once</h2>
                             <p className="sub">Start from the product name. No category is needed. Products go live right away and wait under “Needs mapping” until you map them to a generic product.</p>
+
+                            {aiBar}
 
                             {items.length > 0 && (
                                 <div className="bk-resume">
@@ -383,7 +428,7 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
                             </div>
                             <div className="pn bk-step">
                                 <span className="bk-n">2</span>
-                                <div><h3>Fill in the products</h3><p>One product per row. A <b>grey</b> cell can be skipped. An <b>orange</b> cell is still needed. Photos can be added on the next screens.</p></div>
+                                <div><h3>Fill in the products</h3><p>One product per row. A <b>grey</b> cell can be skipped. An <b>orange</b> cell is still needed. Photos can be uploaded on the next screens, or made by AI.</p></div>
                             </div>
                             <div className="pn bk-step">
                                 <span className="bk-n">3</span>
@@ -413,9 +458,22 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
                             <p className="gx-sum info" style={{ marginTop: 14 }}>
                                 {!keepCount ? "Every product in this file is already in the catalog or repeated, so there is nothing new to continue with."
                                     : checkRows.length ? "All new products continue. You will finish the missing parts on the next screen, one product at a time."
-                                        : photoless ? `Everything looks good. ${plural(photoless, "product has", "products have")} no photos yet. You can add them next, one by one or in bulk.`
+                                        : photoless ? `Everything looks good. ${plural(photoless, "product has", "products have")} no photos yet. You can add them next, or let AI make them.`
                                             : "Everything looks good. Next you can check each product."}
                             </p>
+
+                            {keepCount > 0 && photoless > 0 && (
+                                <label className="pn" style={{ marginTop: 16, display: "flex", gap: 12, alignItems: "flex-start", cursor: "pointer" }}>
+                                    <input type="checkbox" checked={autoAi} onChange={(e) => setAutoAi(e.target.checked)} style={{ marginTop: 3 }} />
+                                    <span>
+                                        <b>Make photos with AI for the {plural(photoless, "product", "products")} without one</b>
+                                        <small style={{ display: "block", marginTop: 3 }}>
+                                            White background, standard 3:4 shape. It runs on our server while you review, and keeps going if you close the page. AI can get label details wrong, so please check each image. You can also do this later from Bulk actions.
+                                        </small>
+                                    </span>
+                                </label>
+                            )}
+
                             {dupRows.length > 0 && (
                                 <div className="pn bk-dups" style={{ marginTop: 16 }}>
                                     <h3 className="bk-h3">Left out: already added</h3>
@@ -438,7 +496,7 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
                                 </div>
                             )}
                             <button className="sbtn" type="button" style={{ marginTop: 18 }} disabled={!keepCount || !!busy} onClick={startReview}>
-                                {busy === "save" ? "Saving…" : keepCount ? `Continue with ${plural(keepCount, "product", "products")}` : "Nothing new to add"}
+                                {busy === "save" ? "Saving…" : keepCount ? `${autoAi && photoless ? "Continue and make photos" : "Continue"} with ${plural(keepCount, "product", "products")}` : "Nothing new to add"}
                             </button>
                             <button className="sbtn gh" type="button" disabled={!!busy} onClick={() => { setParsed(null); setView("intro"); }}>Choose a different file</button>
                         </section>
@@ -454,11 +512,12 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
                                         <button className="lnk" type="button" onClick={saveExit}>Save and exit</button>
                                     </div>
                                 </div>
+                                {aiBar}
                                 {pending.length > 1 && (
                                     <div className="bk-resume" style={{ marginBottom: 12 }}>
                                         <div>
                                             <b>{noPhoto ? `${plural(noPhoto, "product has", "products have")} no photos yet` : "Bulk actions"}</b>
-                                            <small>Add photos to many, remove many, or submit every finished product in one go.</small>
+                                            <small>Add photos to many, make photos with AI, remove many, or submit every finished product in one go.</small>
                                         </div>
                                         <div className="bk-ra">
                                             <button className="sbtn sm" type="button" disabled={!!busy} onClick={() => setManager(true)}>Bulk actions</button>
@@ -485,7 +544,13 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
                                     </>) : <b>Everything is filled in. Press “{lastPending ? "Confirm and finish" : "Confirm and next"}”.</b>}
                                 </div>
                                 <CatalogItemForm key={cur.id} token={token} P={cur.data} onChange={(d) => onEdit(cur.id, d)} say={say}
-                                    units={units} errors={errors} showErrors={showErr} onCheck={setChk} />
+                                    units={units} errors={errors} showErrors={showErr} onCheck={setChk}
+                                    ai={{
+                                        job: curJob,
+                                        fetchedAt: ai.fetchedAt,
+                                        onGenerate: (opts) => ai.enqueue([cur.id], opts),
+                                        onCancel: () => ai.cancel([cur.id]),
+                                    }} />
                                 <button className="lnk bk-rm" type="button" onClick={removeCurrent} disabled={!!busy}>Remove this product from the upload</button>
                             </section>
                             <div className="bar"><div>
@@ -504,6 +569,7 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
                                 {pending.length ? `, ${pending.length} still waiting. They are saved, so you can finish any time.` : "."}
                                 {submittedCount > 0 && " They are live and listed under “Needs mapping” until you map them to a generic product."}
                             </p>
+                            {pending.length > 0 && aiBar}
                             {pending.length > 0 && <button className="sbtn" type="button" onClick={() => { setCurId(pending[0].id); setShowErr(false); setView("review"); }}>Continue with the rest</button>}
                             {pending.length > 1 && <button className="sbtn gh" type="button" onClick={() => setManager(true)}>Bulk actions</button>}
                             <button className="sbtn" type="button" onClick={() => onExit?.()}>Back to catalog</button>
@@ -515,7 +581,8 @@ export default function AdminCatalogBulkUpload({ token, say, onExit }) {
 
             {manager && (
                 <CatalogDraftManagerPanel items={items} getIssues={getIssues} uploadFn={uploadFn}
-                    onApplyPhotos={applyDraftPhotos} onRemove={removeMany} onSubmit={submitMany} onClose={() => setManager(false)} say={say} />
+                    onApplyPhotos={applyDraftPhotos} onRemove={removeMany} onSubmit={submitMany} onClose={() => setManager(false)} say={say}
+                    ai={{ jobs: ai.jobs, onGenerate: ai.enqueue }} />
             )}
         </div>
     );
