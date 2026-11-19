@@ -169,18 +169,27 @@ export async function searchGeoLocationsByType(q, type) {
     return res.json();
 }
 
-// Loads EVERY listing of the seller (the server returns at most 100 per page).
-// Page 1 is reported at once through onFirstPage so the screen fills quickly; the rest load in parallel.
-export async function fetchAllMySubmissions(token, { onFirstPage } = {}) {
+// REPLACE the existing fetchAllMySubmissions in src/utils/sellerListingApi.js with this block
+// (keep authedJson as it is). The old paginated loader stays as the fallback.
+
+const inflightAll = new Map(); // token -> promise: callers that ask at the same moment share one request
+
+// One request for everything (server cached + ETag, so a repeat visit is a tiny 304).
+// Falls back to the old paginated loader if the server doesn't have /submissions/all yet.
+async function loadAllListings(token) {
+    try {
+        const res = await authedJson("/seller/catalog/submissions/all", token);
+        if (res?.success) return { success: true, items: res.items || [] };
+    } catch { /* route missing or network hiccup: use the paged loader */ }
+    return loadAllListingsPaged(token);
+}
+
+async function loadAllListingsPaged(token) {
     const PAGE_SIZE = 100, MAX_PAGES = 30;
     const url = (p) => `/seller/catalog/submissions?page=${p}&pageSize=${PAGE_SIZE}`;
-
     const first = await authedJson(url(1), token);
     if (!first?.success) return { success: false, message: first?.message || "Couldn't load listings." };
-
     const items = [...(first.items || [])];
-    onFirstPage?.(items.slice());
-
     const totalPages = Math.min(first.pagination?.totalPages || 1, MAX_PAGES);
     if (totalPages > 1) {
         const rest = await Promise.all(Array.from({ length: totalPages - 1 }, (_, i) => authedJson(url(i + 2), token)));
@@ -189,9 +198,18 @@ export async function fetchAllMySubmissions(token, { onFirstPage } = {}) {
             items.push(...(r.items || []));
         }
     }
-    // a listing created while we were loading can shift pages: never show the same one twice
     const seen = new Set();
     return { success: true, items: items.filter((it) => (seen.has(it.id) ? false : seen.add(it.id))) };
+}
+
+export function fetchAllMySubmissions(token, { onFirstPage } = {}) {
+    let run = inflightAll.get(token);
+    if (!run) {
+        run = loadAllListings(token).finally(() => inflightAll.delete(token));
+        inflightAll.set(token, run);
+    }
+    // onFirstPage and the final result carry the SAME array, so the page doesn't render twice.
+    return run.then((res) => { if (res?.success) onFirstPage?.(res.items); return res; });
 }
 
 export async function bulkUpdateMarketing(token, { submissionIds, mode, services }) {
@@ -199,3 +217,103 @@ export async function bulkUpdateMarketing(token, { submissionIds, mode, services
         method: "PATCH", body: JSON.stringify({ submissionIds, mode, services }),
     });
 }
+
+export async function fetchPickerBrands(token, { q = "", limit = 36, offset = 0, signal } = {}) {
+    const p = new URLSearchParams({ q, limit, offset });
+    return authedJson(`/seller/catalog/picker/brands?${p}`, token, { signal });
+}
+
+export async function fetchPickerItems(token, { brand = "", none = false, q = "", limit = 30, offset = 0, signal } = {}) {
+    const p = new URLSearchParams({ q, limit, offset });
+    if (none) p.set("none", "1"); else p.set("brand", brand);
+    return authedJson(`/seller/catalog/picker/items?${p}`, token, { signal });
+}
+
+// APPEND to the bottom of src/utils/sellerListingApi.js
+// (authedJson and bulkUpdateMarketing are already defined in that file)
+
+const BULK_CHUNK = 100; // ids per request (server accepts up to 200); keeps URLs and payloads small
+
+// Sends a big selection as several requests and merges the results.
+// Stops at the first failed request and reports what had already been saved.
+async function bulkChunked(path, token, ids, extra) {
+    const updated = [], skipped = [];
+    let visibilityMode = null;
+    for (let i = 0; i < ids.length; i += BULK_CHUNK) {
+        let res = null;
+        try {
+            res = await authedJson(path, token, {
+                method: "PATCH",
+                body: JSON.stringify({ ...extra, submissionIds: ids.slice(i, i + BULK_CHUNK) }),
+            });
+        } catch { res = null; }
+        if (!res?.success) {
+            return { success: false, partial: updated.length > 0, updated, skipped, visibilityMode, message: res?.message || "Network error. Check your connection and try again." };
+        }
+        updated.push(...(res.updated || []));
+        skipped.push(...(res.skipped || []));
+        if (res.visibilityMode) visibilityMode = res.visibilityMode;
+    }
+    return { success: true, updated, skipped, visibilityMode };
+}
+
+// percent > 0 raises prices, percent < 0 lowers them
+export const bulkChangePrice = (token, ids, percent) =>
+    bulkChunked("/seller/catalog/bulk/price", token, ids, { percent });
+
+export const bulkSetActive = (token, ids, isActive) =>
+    bulkChunked("/seller/catalog/bulk/active", token, ids, { isActive });
+
+// payload: { action: "add", buyerIds, discountPercent?, makeRestricted? }
+//        | { action: "remove", buyerIds, clearPrice? }
+//        | { action: "set_mode", mode: "public" | "restricted" }
+export const bulkVisibility = (token, ids, payload) =>
+    bulkChunked("/seller/catalog/bulk/visibility", token, ids, payload);
+
+// Same chunking for the existing marketing endpoint.
+export async function bulkMarketingChunked(token, { ids, mode, services }) {
+    const updated = [], skipped = [];
+    for (let i = 0; i < ids.length; i += BULK_CHUNK) {
+        let res = null;
+        try { res = await bulkUpdateMarketing(token, { submissionIds: ids.slice(i, i + BULK_CHUNK), mode, services }); } catch { res = null; }
+        if (res?.items?.length) updated.push(...res.items);
+        if (!res?.success) {
+            return { success: false, partial: updated.length > 0, updated, skipped, message: res?.message || "Network error. Check your connection and try again." };
+        }
+        for (let k = 0; k < (Number(res.skipped) || 0); k++) skipped.push({ id: null, reason: "Listing not found." });
+    }
+    return { success: true, updated, skipped };
+}
+
+/* ---------- product photo requests ---------- */
+export const fetchProductImageRequests = (token, submissionId) =>
+    authedJson(`/seller/catalog/submissions/${submissionId}/image-requests`, token);
+
+export const createProductImageRequest = (token, submissionId, payload) =>
+    authedJson(`/seller/catalog/submissions/${submissionId}/image-requests`, token, { method: "POST", body: JSON.stringify(payload) });
+
+export const cancelProductImageRequest = (token, submissionId, requestId) =>
+    authedJson(`/seller/catalog/submissions/${submissionId}/image-requests/${requestId}`, token, { method: "DELETE" });
+
+// admin
+export const adminListImageRequests = (token, { status = "pending", limit = 30, offset = 0 } = {}) =>
+    authedJson(`/admin/product-image-requests?${new URLSearchParams({ status, limit, offset })}`, token);
+
+export const adminApproveImageRequest = (token, id) =>
+    authedJson(`/admin/product-image-requests/${id}/approve`, token, { method: "POST" });
+
+export const adminRejectImageRequest = (token, id, reason) =>
+    authedJson(`/admin/product-image-requests/${id}/reject`, token, { method: "POST", body: JSON.stringify({ reason }) });
+
+export const adminImageAuditLog = (token, { brandItemId, requestId, limit = 50, offset = 0 } = {}) => {
+    const p = new URLSearchParams({ limit, offset });
+    if (brandItemId) p.set("brandItemId", brandItemId);
+    if (requestId) p.set("requestId", requestId);
+    return authedJson(`/admin/product-image-requests/audit?${p}`, token);
+};
+
+export const adminRollbackPreview = (token, brandItemId) =>
+    authedJson(`/admin/product-image-requests/rollback-preview?${new URLSearchParams({ brandItemId })}`, token);
+
+export const adminRollbackImages = (token, brandItemId, logId) =>
+    authedJson(`/admin/product-image-requests/rollback`, token, { method: "POST", body: JSON.stringify({ brandItemId, logId }) });

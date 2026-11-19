@@ -29,6 +29,7 @@ import AdminGroupBannersPage from "./pages/admin/AdminGroupBannersPage.jsx";
 import AdminEntityBannersPage from "./pages/admin/AdminEntityBannersPage.jsx";
 import AdminAiBannersPage from "./pages/admin/AdminAiBannersPage.jsx";
 import AdminImageStudioPage from "./pages/admin/AdminImageStudioPage.jsx";
+import AdminProductImageRequestsPage from "./pages/admin/AdminProductImageRequestsPage.jsx";
 
 
 function App() {
@@ -71,6 +72,7 @@ function App() {
                   <Route path="/entity-banners" element={<AdminEntityBannersPage />} />
                   <Route path="/ai-banners" element={<AdminAiBannersPage />} />
                   <Route path="/bg-remover" element={<AdminImageStudioPage />} />
+                  <Route path="/image-requests" element={<AdminProductImageRequestsPage />} />
                 </Route>
               </Route>
             </Routes>
