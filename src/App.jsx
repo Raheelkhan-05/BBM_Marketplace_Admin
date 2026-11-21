@@ -7,7 +7,8 @@ import AdminLayout from "./components/AdminLayout.jsx";
 import AuthPage from "./pages/AuthPage.jsx";
 import AppShell from "./components/AppShell.jsx";
 import AdminSellersPage from "./pages/admin/AdminSellersPage.jsx";
-import AdminSellerDetailPage from "./pages/admin/AdminSellerDetailPage.jsx";
+import AdminSellerDetailRoute from "./pages/admin/AdminSellerDetailRoute.jsx";
+import AdminActAsUserPage from "./pages/admin/AdminActAsUserPage.jsx";
 import AdminManageAdminsPage from "./pages/admin/AdminManageAdminsPage.jsx";
 import AdminCatalogReviewPage from "./pages/admin/AdminCatalogReviewPage.jsx";
 import AdminCatalogDetailPage from "./pages/admin/AdminCatalogDetailPage.jsx";
@@ -51,7 +52,8 @@ function App() {
 
                 <Route element={<AdminLayout />}>
                   <Route path="/sellers" element={<AdminSellersPage />} />
-                  <Route path="/sellers/:id" element={<AdminSellerDetailPage />} />
+                  <Route path="/sellers/:id" element={<AdminSellerDetailRoute />} />
+                  <Route path="/act-as" element={<AdminActAsUserPage />} />
                   <Route path="/report" element={<AdminGstinReportsPage />} />
                   <Route path="/admins" element={<AdminManageAdminsPage />} />
                   <Route path="/catalog" element={<AdminCatalogReviewPage />} />
