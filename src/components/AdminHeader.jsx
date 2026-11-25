@@ -17,6 +17,7 @@ import {
     Menu,
     TriangleAlert,
     FileText,
+    Ad,
     X,
     Eraser,
     Package,
@@ -50,6 +51,12 @@ export const ADMIN_NAV_ITEMS = [
         label: "Act-as",
         icon: ShieldAlert,
         to: "/act-as",
+    },
+    {
+        id: "ads",
+        label: "Ads",
+        icon: Ad,
+        to: "/ads",
     },
     {
         id: "bg-remover",
