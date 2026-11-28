@@ -3,7 +3,7 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api
 const CHUNK = 25;
 const IMG_CHUNK = 150;
 const DEL_CHUNK = 150;
-const RENEW_CHUNK = 100;
+const RENEW_CHUNK = 1000;
 
 async function call(path, token, { method = "GET", body, keepalive = false } = {}) {
     try {
@@ -87,30 +87,29 @@ export async function bulkDelete(kind, adminToken, gstin, ids, onProgress) {
     return { success: true, deleted: gone.length, skipped: ids.length - gone.length, ids: gone };
 }
 
-// Renew many EXPIRED live listings (same result as the single Renew button, once per listing).
+// Renew EXPIRED live listings. The server renews them in one database statement.
+//   target: { all: true }  -> every expired listing of the seller (one request)
+//           { ids: [...] } -> only those listings (1000 per request)
 // validityHours: null keeps each listing's own saved validity; a number sets the same validity on all of them.
-// `items` always holds what was renewed so far, even if a later batch failed:
+// `items` always holds what was renewed so far, even if a later request failed:
 //   { id, is_active, validity_hours, valid_from, expires_at, expired_at }
-export async function bulkRenew(adminToken, gstin, ids, validityHours = null, onProgress) {
+export async function bulkRenew(adminToken, gstin, target, validityHours = null) {
+    const extra = validityHours != null ? { validityHours } : {};
+    const parts = target?.all ? [{ all: true }] : Array.from({ length: Math.ceil((target?.ids?.length || 0) / RENEW_CHUNK) }, (_, i) => ({ ids: target.ids.slice(i * RENEW_CHUNK, (i + 1) * RENEW_CHUNK) }));
     const items = [];
-    let renewed = 0, skipped = 0, failed = 0;
-    for (let i = 0; i < ids.length; i += RENEW_CHUNK) {
-        onProgress?.(i, ids.length);
-        const part = ids.slice(i, i + RENEW_CHUNK);
-        const r = await call(`${B}/listings/renew`, adminToken, {
-            method: "POST",
-            body: { gstin, ids: part, ...(validityHours != null ? { validityHours } : {}) },
-        });
+    let renewed = 0, skipped = 0;
+    for (const part of parts) {
+        const r = await call(`${B}/listings/renew`, adminToken, { method: "POST", body: { gstin, ...part, ...extra } });
         if (!r?.success) {
-            if (r?.status === 404) { skipped += part.length; continue; } // nothing in this batch is expired any more
+            if (r?.status === 404) { skipped += part.ids?.length || 0; continue; } // nothing here is expired any more
             const done = renewed ? ` ${renewed} listing${renewed === 1 ? " was" : "s were"} renewed before the error.` : "";
-            return { success: false, renewed, skipped, failed, items, message: `${r?.message || "Could not renew the listings."}${done}` };
+            return { success: false, renewed, skipped, items, message: `${r?.message || "Could not renew the listings."}${done}` };
         }
-        renewed += r.renewed || 0; skipped += r.skipped || 0; failed += r.failed || 0;
-        items.push(...(r.items || []));
+        renewed += r.renewed || 0; skipped += r.skipped || 0;
+        for (const x of r.items || []) items.push({ ...x, is_active: true, valid_from: r.valid_from, expired_at: null });
     }
-    onProgress?.(ids.length, ids.length);
-    return { success: true, renewed, skipped, failed, items };
+    if (!renewed && skipped) return { success: false, renewed, skipped, items, message: "None of these listings are expired any more. Refresh the page and try again." };
+    return { success: true, renewed, skipped, items };
 }
 
 // Set (or clear, parentId = null) the generic product waiting items will be mapped to when they go live.
