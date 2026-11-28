@@ -1,7 +1,7 @@
 // Manage every listing of one seller (via the admin "act as seller" token). Same data and actions as GROW "My products".
-// Admin extras: select many listings to give them the same photos, or remove them (soft delete) in one step.
+// Admin extras: select many listings to give them the same photos, renew the expired ones, or remove them (soft delete) in one step.
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, RefreshCw, Pencil, Trash2, Repeat, X, ImagePlus } from "lucide-react";
+import { Search, RefreshCw, Pencil, Trash2, Repeat, X, ImagePlus, Clock } from "lucide-react";
 import { C } from "../catalog/tokens";
 import { Chip } from "../orders/disputeUi.jsx";
 import GrowEditListing from "../grow/GrowEditListing.jsx";
@@ -10,16 +10,18 @@ import BulkConfirmModal from "./BulkConfirmModal.jsx";
 import { Checkbox, SelectAllRow, SelectionBar, BarButton, useSelection } from "./bulkSelect.jsx";
 import { setSellerSubmissionActive, refreshSellerSubmission } from "../../utils/api.js";
 import { fetchAllMySubmissions } from "../../utils/sellerListingApi.js";
-import { bulkImages, bulkDelete } from "../../utils/api.adminListings.js";
-import { getListingExpiry, formatTimeLeft, formatExpiryDate, validityLabel } from "../../shared/listingValidity.js";
+import { bulkImages, bulkDelete, bulkRenew } from "../../utils/api.adminListings.js";
+import { getListingExpiry, formatTimeLeft, formatExpiryDate, validityLabel, VALIDITY_OPTIONS } from "../../shared/listingValidity.js";
 import { saleUnitLabel } from "../../shared/packUnits.js";
 import { resizedImageUrl } from "../../utils/imageUrl.js";
 import { fmtQty, inr, toTitleCase, stockState, packagingLabel, compactSaleUnit, priceRowsFor, renewalHoursFor } from "../growSeller/sellerHelpers.js";
 
 const FILTERS = [["all", "All"], ["live", "Live"], ["paused", "Paused"], ["exp", "Expired"], ["low", "Low stock"], ["nophoto", "No photos"], ["rej", "Rejected"]];
 const GRID = "xl:grid-cols-[minmax(0,2.3fr)_1fr_.8fr_1fr_1.1fr_auto]";
+// 1 min is a testing option, so it is not offered when renewing in bulk
+const RENEW_OPTIONS = VALIDITY_OPTIONS.filter((o) => o.hours >= 24);
 const hasPhoto = (it) => !!(it.image || it.images?.length);
-const plural = (n, a, b) => `${n} ${n === 1 ? a : b}`;
+const plural = (n, a, b) => `${n.toLocaleString("en-IN")} ${n === 1 ? a : b}`;
 
 function classify(it, nowMs) {
     const rejected = it.review_status === "rejected";
@@ -81,7 +83,7 @@ const Row = memo(function Row({ it, nowMs, busy, selected, onSelect, onEdit, onT
     );
 });
 
-// token = "act as seller" token. adminToken + gstin are used for the bulk photo and bulk delete actions.
+// token = "act as seller" token. adminToken + gstin are used for the bulk photo, bulk renew and bulk delete actions.
 export default function AdminSellerProducts({ token, adminToken, gstin, say }) {
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -95,6 +97,10 @@ export default function AdminSellerProducts({ token, adminToken, gstin, say }) {
     const [delOpen, setDelOpen] = useState(false);
     const [delBusy, setDelBusy] = useState(false);
     const [delProg, setDelProg] = useState("");
+    const [renewIds, setRenewIds] = useState(null);   // ids the open renew dialog will renew (null = closed)
+    const [renewHours, setRenewHours] = useState(""); // "" = every listing keeps its own validity
+    const [renewBusy, setRenewBusy] = useState(false);
+    const [renewProg, setRenewProg] = useState("");
     const seq = useRef(0);
 
     useEffect(() => { const t = setInterval(() => setNowMs(Date.now()), 60000); return () => clearInterval(t); }, []);
@@ -140,6 +146,10 @@ export default function AdminSellerProducts({ token, adminToken, gstin, say }) {
     const listIds = useMemo(() => list.map((it) => it.id), [list]);
     const sel = useSelection(listIds);
 
+    // every expired listing of this seller (not just the ones on screen) and the expired ones among the selection
+    const expiredSet = useMemo(() => new Set(items.filter((it) => classify(it, nowMs).expired).map((it) => it.id)), [items, nowMs]);
+    const selExpired = useMemo(() => [...sel.selected].filter((id) => expiredSet.has(id)), [sel.selected, expiredSet]);
+
     const toggle = useCallback(async (it, active) => {
         setBusyId(it.id); patch(it.id, { is_active: active });
         const res = await setSellerSubmissionActive(token, it.id, active);
@@ -155,6 +165,27 @@ export default function AdminSellerProducts({ token, adminToken, gstin, say }) {
         if (res?.success && res.submission) { patch(it.id, res.submission); setNowMs(Date.now()); say(`Renewed. Live until ${formatExpiryDate(res.submission.expires_at)}.`); }
         else say(res?.message || "Could not renew the listing.");
     }, [token, say, patch]);
+
+    // Renew every expired listing in `renewIds`. All rows are patched in one state update, so 1000+ renewals stay smooth.
+    const renewMany = async () => {
+        const ids = renewIds || [];
+        if (!ids.length || renewBusy) return;
+        setRenewBusy(true); setRenewProg("Renewing…");
+        const r = await bulkRenew(adminToken, gstin, ids, renewHours === "" ? null : Number(renewHours),
+            (d, t) => setRenewProg(d >= t ? "Finishing…" : `Renewed ${d.toLocaleString("en-IN")} of ${t.toLocaleString("en-IN")}…`));
+        setRenewBusy(false); setRenewProg("");
+        if (r.items.length) {
+            const m = new Map(r.items.map((x) => [x.id, x]));
+            setItems((l) => l.map((it) => (m.has(it.id) ? { ...it, ...m.get(it.id) } : it)));
+            setNowMs(Date.now());
+        }
+        if (r.success) {
+            say(`Renewed ${plural(r.renewed, "listing", "listings")}${r.skipped ? `, ${r.skipped.toLocaleString("en-IN")} skipped` : ""}${r.failed ? `, ${r.failed.toLocaleString("en-IN")} failed` : ""}.`);
+            if (!r.failed) sel.clear();
+        } else say(r.message);
+        setRenewIds(null); setRenewHours("");
+    };
+    const openRenew = (ids) => { setRenewHours(""); setRenewIds(ids); };
 
     // Single delete is a soft delete too: the record is kept, buyers and the seller no longer see it.
     const remove = useCallback(async (it) => {
@@ -218,13 +249,32 @@ export default function AdminSellerProducts({ token, adminToken, gstin, say }) {
                 ))}
             </div>
 
+            {/* one-click renew for everything that has expired */}
+            {stats.exp > 0 && (
+                <div className="mt-2 flex flex-col gap-2 rounded-xl border px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: "#fcd34d", background: "#fffbeb" }}>
+                    <div className="flex min-w-0 items-start gap-2.5">
+                        <Clock className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "#b45309" }} />
+                        <p className="text-[12.5px] font-semibold leading-relaxed" style={{ color: "#92400e" }}>
+                            {plural(stats.exp, "listing has", "listings have")} expired and {stats.exp === 1 ? "is" : "are"} hidden from buyers.
+                        </p>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap items-center gap-2">
+                        {filter !== "exp" && <button type="button" onClick={() => setFilter("exp")} className="min-h-9 rounded-lg px-3 text-[12px] font-bold" style={{ color: "#92400e" }}>View expired</button>}
+                        <button type="button" onClick={() => openRenew([...expiredSet])} disabled={renewBusy}
+                            className="flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-3.5 text-[12.5px] font-bold text-white disabled:opacity-50" style={{ background: C.primary }}>
+                            <Repeat className="h-3.5 w-3.5" />Renew all {stats.exp.toLocaleString("en-IN")}
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-[12.5px] font-semibold text-red-700">{error}</p>}
 
             {list.length > 0 && (
                 <div className="mt-2 rounded-xl border bg-white px-2.5 py-1.5" style={{ borderColor: C.hair }}>
                     <SelectAllRow accent={C.primary} checked={sel.isAll} indeterminate={sel.count > 0 && !sel.isAll} count={sel.count} total={list.length}
                         noun="listings shown" onChange={() => (sel.isAll ? sel.clear() : sel.selectAll())}>
-                        <span className="text-[11.5px] font-medium" style={{ color: C.muted }}>Tip: search a product, select all, then add photos or remove them once. Hold Shift to pick a range.</span>
+                        <span className="text-[11.5px] font-medium" style={{ color: C.muted }}>Tip: search a product, select all, then add photos, renew or remove them once. Hold Shift to pick a range.</span>
                     </SelectAllRow>
                 </div>
             )}
@@ -248,12 +298,31 @@ export default function AdminSellerProducts({ token, adminToken, gstin, say }) {
             </div>
 
             <SelectionBar count={sel.count} total={list.length} noun="listings" onSelectAll={sel.selectAll} onClear={sel.clear}>
+                {selExpired.length > 0 && <BarButton icon={Repeat} onClick={() => openRenew(selExpired)}>Renew {selExpired.length.toLocaleString("en-IN")}</BarButton>}
                 <BarButton icon={ImagePlus} onClick={() => setPhotoOpen(true)}>Add photos</BarButton>
                 <BarButton icon={Trash2} danger onClick={() => setDelOpen(true)}>Delete</BarButton>
             </SelectionBar>
 
             {photoOpen && sel.count > 0 && (
                 <BulkPhotoModal count={sel.count} noun="listing" uploadToken={token} onApply={applyPhotos} onClose={() => setPhotoOpen(false)} say={say} />
+            )}
+
+            {renewIds && renewIds.length > 0 && (
+                <BulkConfirmModal title={`Renew ${plural(renewIds.length, "expired listing", "expired listings")}?`} confirmLabel={`Renew ${renewIds.length.toLocaleString("en-IN")}`}
+                    busy={renewBusy} progress={renewProg} onConfirm={renewMany} onClose={() => setRenewIds(null)}>
+                    <p>{renewIds.length === 1 ? "This listing goes" : "These listings go"} live again and buyers can see and order {renewIds.length === 1 ? "it" : "them"} once the renewal finishes.</p>
+                    {selExpired.length === renewIds.length && sel.count > selExpired.length && (
+                        <p>Only the expired ones from your selection are renewed. The other {(sel.count - selExpired.length).toLocaleString("en-IN")} are left as they are.</p>
+                    )}
+                    <label className="mt-2 block">
+                        <span className="text-[12px] font-bold" style={{ color: C.muted }}>Live for</span>
+                        <select value={renewHours} onChange={(e) => setRenewHours(e.target.value)} disabled={renewBusy}
+                            className="mt-1.5 w-full rounded-xl border bg-white px-3 py-2.5 text-[13px] font-semibold outline-none" style={{ borderColor: C.hair, color: C.ink }}>
+                            <option value="">Each listing's own validity</option>
+                            {RENEW_OPTIONS.map((o) => <option key={o.hours} value={o.hours}>{o.label} for all</option>)}
+                        </select>
+                    </label>
+                </BulkConfirmModal>
             )}
 
             {delOpen && sel.count > 0 && (
